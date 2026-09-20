@@ -106,11 +106,15 @@
   details summary::before { content: '▸ '; } details[open] summary::before { content: '▾ '; }
 
   /* drop anywhere: the overlay covers the reader iframe too, so drops land on it */
-  #drop-overlay { display: none; position: fixed; inset: 10px; z-index: 50;
-    border: 3px dashed #7fb4e8; border-radius: 12px; background: rgba(30,30,36,.85);
-    color: #cfe3f7; font-size: 18px; align-items: center; justify-content: center;
-    pointer-events: none; }
+  #drop-overlay { display: none; position: fixed; inset: 10px; z-index: 50; gap: 14px;
+    padding: 14px; background: rgba(30,30,36,.9); color: #cfe3f7; pointer-events: none; }
   body.dropping #drop-overlay { display: flex; pointer-events: auto; }
+  .zone { flex: 1; border: 3px dashed #4a4f5a; border-radius: 12px; display: flex;
+    flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+    font-size: 17px; text-align: center; padding: 20px; }
+  .zone small { font-size: 12px; color: #8888a0; }
+  .zone.over { border-color: #7fb4e8; background: #23283a; }
+  .zone[hidden] { display: none; }
 </style></head>
 <body hx-headers='{"X-Requested-With":"htmx"}'>
   <div class="tree">
@@ -131,7 +135,11 @@
     <iframe id="reader" src="about:blank" style="display:none"></iframe>
     <div id="reader-empty" class="empty">← pick a document</div>
   </div>
-  <div id="drop-overlay"><span id="drop-label"></span></div>
+  <div id="drop-overlay">
+    <div class="zone" data-mode="open" id="zone-open">➕ Add to the open item<small id="zone-open-name"></small></div>
+    <div class="zone" data-mode="one">📁 One new item for all files<small>bundled together, titled after the first file, in <span class="zone-area"></span></small></div>
+    <div class="zone" data-mode="each">📄 One new item per file<small>each on its own, in <span class="zone-area"></span></small></div>
+  </div>
   <div class="panel" id="side-panel">
     <div class="inner muted">library · {{ item_count }} items · pick one, or make one below the tree.</div>
   </div>
@@ -163,14 +171,17 @@ async function uploadFiles(itemId, fileList) {
   const j = await r.json();
   htmx.ajax('GET', '/open/' + itemId + '?msg=' + encodeURIComponent(batchMsg(j)), '#side-panel');
 }
-async function uploadAsNewItem(fileList) {
+async function uploadAsNewItem(fileList, mode) {
   const fd = new FormData();
   for (const f of fileList) fd.append('files', f);
   fd.append('area', document.getElementById('area-select').value);
   fd.append('new_area', document.getElementById('new-area-name').value);
+  fd.append('mode', mode);
   const r = await fetch('/api/items/from-files', { method: 'POST', body: fd });
   const j = await r.json();
-  htmx.ajax('GET', '/open/' + j.item_id + '?msg=' + encodeURIComponent(batchMsg(j)), '#side-panel');
+  const msg = batchMsg(j) + (j.items > 1 ? ' as ' + j.items + ' items' : '');
+  if (j.item_id) htmx.ajax('GET', '/open/' + j.item_id + '?msg=' + encodeURIComponent(msg), '#side-panel');
+  else htmx.ajax('GET', '/tree', '#tree-inner');
 }
 function wireDrop(el, itemId) {
   el.addEventListener('dragover', e => { e.preventDefault(); e.stopPropagation(); el.classList.add('over'); });
@@ -191,24 +202,35 @@ function areaChanged(sel) {
   if (!inp.hidden) inp.focus();
 }
 
-// --- drop anywhere → the open item, or a new item in the picker's area
+// --- drop anywhere → zones: the open item · one bundled item · one item per file
 let dragDepth = 0;
 function dropping(on) {
   document.body.classList.toggle('dropping', on);
-  if (on) document.getElementById('drop-label').textContent = window.OPEN_ITEM
-    ? 'Drop files to add them to the open item' : 'Drop files to make a new item in ' + currentArea();
+  if (!on) return;
+  const z = document.getElementById('zone-open');
+  z.hidden = !window.OPEN_ITEM;
+  if (window.OPEN_ITEM) z.querySelector('small').textContent = document.querySelector('#side-panel h2')?.textContent || '';
+  document.querySelectorAll('.zone-area').forEach(e => e.textContent = currentArea());
 }
+document.querySelectorAll('.zone').forEach(z => {
+  z.addEventListener('dragover', e => { e.preventDefault(); z.classList.add('over'); });
+  z.addEventListener('dragleave', () => z.classList.remove('over'));
+  z.addEventListener('drop', e => {
+    e.preventDefault(); e.stopPropagation(); z.classList.remove('over'); dragDepth = 0; dropping(false);
+    const files = e.dataTransfer.files;
+    if (z.dataset.mode === 'open') uploadFiles(window.OPEN_ITEM, files);
+    else uploadAsNewItem(files, z.dataset.mode);
+  });
+});
 window.addEventListener('dragenter', e => {
   if (!e.dataTransfer || ![...e.dataTransfer.types].includes('Files')) return;
   e.preventDefault(); dragDepth++; dropping(true);
 });
 window.addEventListener('dragover', e => { if (document.body.classList.contains('dropping')) e.preventDefault(); });
 window.addEventListener('dragleave', e => { if (--dragDepth <= 0) { dragDepth = 0; dropping(false); } });
-window.addEventListener('drop', e => {
+window.addEventListener('drop', e => {   // a drop outside every zone: cancel, nothing uploads
   if (!document.body.classList.contains('dropping')) return;
   e.preventDefault(); dragDepth = 0; dropping(false);
-  if (window.OPEN_ITEM) uploadFiles(window.OPEN_ITEM, e.dataTransfer.files);
-  else uploadAsNewItem(e.dataTransfer.files);
 });
 </script>
 </body></html>

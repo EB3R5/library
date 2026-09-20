@@ -544,6 +544,23 @@ def delete_for_items(conn, item_ids: list[str]) -> int:
     return len(rows)
 
 
+def detach(conn, doc_id: str, title: str, area: str) -> str:
+    """Move one Document out of its Item into a new Item of its own. Versions
+    follow the document (doc_id is unchanged); the old Item's pin is cleared
+    if it pointed here, and both Items' updated_at bump."""
+    d = get(conn, doc_id)
+    old_item = d["item_id"]
+    new_item = create_item(conn, title or PurePosixPath(d["name"]).stem, area)
+    conn.execute("UPDATE documents SET item_id=? WHERE id=?", (new_item, doc_id))
+    conn.execute("UPDATE items SET entry_doc_id=NULL WHERE id=? AND entry_doc_id=?",
+                 (old_item, doc_id))
+    set_doc_fts(conn, {**d, "item_id": new_item})
+    touch_item(conn, old_item)
+    touch_item(conn, new_item)
+    conn.commit()
+    return new_item
+
+
 def raw(conn, doc_id: str) -> tuple[bytes, str, str]:
     d = get(conn, doc_id)
     if is_text_kind(d["kind"]):

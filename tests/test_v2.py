@@ -195,6 +195,33 @@ def test_workbench_and_item_from_files():
     assert r.status_code == 200 and "garden" in docs.all_areas(conn)
 
 
+def test_drop_modes_and_detach():
+    files = [("files", ("a.md", b"# a", "text/markdown")), ("files", ("b.txt", b"b", "text/plain")),
+             ("files", ("empty.md", b"", "text/markdown"))]
+    one = client.post("/api/items/from-files", data={"area": "misc", "mode": "one"}, files=files).json()
+    assert one["items"] == 1 and len(one["documents"]) == 2 and one["errors"] == ["empty.md: empty file"]
+    assert docs.get_item(conn, one["item_id"])["title"] == "a"
+    each = client.post("/api/items/from-files", data={"area": "misc", "mode": "each"}, files=files).json()
+    assert each["items"] == 2 and len(each["documents"]) == 2 and each["errors"] == ["empty.md: empty file"]
+    titles = {docs.get_item(conn, d["item_id"])["title"] for d in each["documents"]}
+    assert titles == {"a", "b"}
+    assert not [i for i in docs.list_items(conn) if i["title"] == "empty"]   # no empty item left behind
+
+    # un-bundle: move b.txt out of the bundled item into its own item in a new area
+    b = [d for d in docs.list_for_item(conn, one["item_id"]) if d["name"] == "b.txt"][0]
+    docs.update(conn, b["id"], {"body": "b2"})                 # a Version that must follow
+    docs.set_entry(conn, one["item_id"], b["id"])
+    r = client.post(f"/documents/{b['id']}/detach", data={"title": "B alone", "area": "__new__", "new_area": "Loose"})
+    assert r.status_code == 200 and "B alone" in r.text
+    moved = docs.get(conn, b["id"])
+    new_item = docs.get_item(conn, moved["item_id"])
+    assert new_item["title"] == "B alone" and new_item["area"] == "loose"
+    assert [d["name"] for d in docs.list_for_item(conn, one["item_id"])] == ["a.md"]
+    assert docs.get_item(conn, one["item_id"])["entry_doc_id"] is None
+    assert len(docs.versions(conn, b["id"])) == 1
+    assert dict(docs.search(conn, "b2"))[new_item["id"]]["docs"][0]["name"] == "b.txt"
+
+
 # ---------------------------------------------------------------- claude loop (no CLI)
 def test_claude_diff_accept_and_race_guard(item, monkeypatch):
     n = docs.add_note(conn, item, "glossary")

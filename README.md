@@ -45,11 +45,17 @@ of documents. The document that opens when you click the item is the one you
 pinned with 📌, or the first one added.
 
 **Getting documents in.** Drop files on the document list in the Info tab,
-click ⇪ for the OS chooser, or drop files anywhere on the Workbench. With an
-item open, a drop adds to it. With nothing open, a drop makes a new item
-titled after the first file. Text over 4 MB, files over 50 MB and empty files
-are refused individually, and the rest of the batch still lands. Names are
-unique per item, so a second `report.md` becomes `report (2).md`.
+click ⇪ for the OS chooser, or drag files anywhere on the Workbench. Dragging
+shows drop zones: add to the open item, one new item bundling all the files,
+or one new item per file. New items are titled after their first file and go
+in the area picked under the tree. Text over 4 MB, files over 50 MB and empty
+files are refused individually, and the rest of the batch still lands. Names
+are unique per item, so a second `report.md` becomes `report (2).md`.
+
+**Bundling and un-bundling.** An item is a bundle of documents. To split one,
+hover a document in the Info tab and click ⇥: it moves into a new item of
+its own, with the title and area you choose. Its version history moves with
+it. To bundle, drop files on an item's list or use the first drop zone.
 
 **Reading and editing.** The document page has a head bar with the name, a
 kind chip, the size, and View / Edit / History / Download / Print. Edit mode

@@ -28,8 +28,17 @@
           hx-post="/items/{{ it.id }}/pin/{{ d.id }}" hx-target="#side-panel">📌</span>{% endif %}
         {% if d.editable %}<span class="ico" title="edit" onclick="loadDoc('/documents/{{ d.id }}?edit=1')">✎</span>{% endif %}
         <span class="ico" title="rename" onclick="var f=this.closest('li').querySelector('.rn'); f.hidden=!f.hidden; if(!f.hidden) f.querySelector('input').focus()">⌥</span>
+        {% if docs|length > 1 %}<span class="ico" title="move to its own item" onclick="var f=this.closest('li').querySelector('.mv'); f.hidden=!f.hidden; if(!f.hidden) f.querySelector('input').focus()">⇥</span>{% endif %}
         <span class="ico" title="delete" onclick="var f=this.closest('li').querySelector('.del'); f.hidden=!f.hidden">✕</span>
       </span>
+      <form class="mv inline" hidden hx-post="/documents/{{ d.id }}/detach" hx-target="#side-panel" style="flex-wrap:wrap">
+        <input name="title" value="{{ d.name.rsplit('.', 1)[0] if '.' in d.name else d.name }}" placeholder="New item title" style="flex:1 1 100%">
+        <select name="area" style="flex:1;margin:0" onchange="var i=this.parentElement.querySelector('input[name=new_area]'); i.hidden=this.value!=='__new__'; if(!i.hidden) i.focus()">
+          {% for a in areas %}<option {{ 'selected' if a == it.area }}>{{ a }}</option>{% endfor %}
+          <option value="__new__">＋ new area…</option>
+        </select>
+        <input name="new_area" placeholder="new area name" hidden style="flex:1">
+        <button class="sm">Move out</button></form>
       <form class="rn inline" hidden hx-post="/documents/{{ d.id }}/rename" hx-target="#side-panel">
         <input name="name" value="{{ d.name }}"><button class="sm">Save</button></form>
       <div class="del inline warn" hidden>delete {{ d.name }}?

@@ -240,6 +240,17 @@ def delete_doc(doc_id: str):
     return panel_html(d["item_id"]) + entry_script(d["item_id"]) + oob_tree()
 
 
+@app.post("/documents/{doc_id}/detach", response_class=HTMLResponse)
+def detach_doc(doc_id: str, title: str = Form(""), area: str = Form("misc"),
+               new_area: str = Form("")):
+    """Move this document into a new item of its own (the un-bundle action)."""
+    d = docs.get(conn, doc_id)
+    if pending_on(d["item_id"]):
+        return panel_html(d["item_id"], msg="⚠ resolve the pending Claude edit first")
+    new_item = docs.detach(conn, doc_id, title, resolve_area(area, new_area))
+    return (open_html(new_item, doc_id, msg="✓ moved into its own item") or "") + area_picker_oob()
+
+
 @app.get("/documents/{doc_id}", response_class=HTMLResponse)
 def document_page(doc_id: str, edit: int = 0, history: int = 0):
     try:
@@ -273,12 +284,27 @@ def upload(item_id: str, files: list[UploadFile] = File(...)):
 
 @app.post("/api/items/from-files")
 def item_from_files(files: list[UploadFile] = File(...), area: str = Form("misc"),
-                    new_area: str = Form("")):
-    """Files dropped on the Workbench with no item open: a new item titled
-    after the first file, holding the batch."""
+                    new_area: str = Form(""), mode: str = Form("one")):
+    """Files dropped on the Workbench as new items. mode=one bundles the batch
+    into a single item titled after the first file; mode=each makes one item
+    per file. The reply opens the last item made."""
+    area = resolve_area(area, new_area)
+    if mode == "each":
+        out, errors, last = [], [], None
+        for f in files:
+            iid = docs.create_item(conn, Path(f.filename or "Untitled").stem or "Untitled", area)
+            r = _upload_batch(iid, [f])
+            if r["documents"]:
+                out += r["documents"]
+                last = iid
+            else:                      # nothing landed (empty file, over cap): no empty item
+                docs.delete_item(conn, iid)
+            errors += r["errors"]
+        return JSONResponse({"ok": not errors, "documents": out, "errors": errors,
+                             "item_id": last, "items": len({d["item_id"] for d in out})})
     title = Path(files[0].filename or "Untitled").stem if files else "Untitled"
-    iid = docs.create_item(conn, title or "Untitled", resolve_area(area, new_area))
-    return JSONResponse({**_upload_batch(iid, files), "item_id": iid})
+    iid = docs.create_item(conn, title or "Untitled", area)
+    return JSONResponse({**_upload_batch(iid, files), "item_id": iid, "items": 1})
 
 
 @app.post("/api/documents/render")
