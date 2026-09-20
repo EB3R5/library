@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.venv/
+.DS_Store
+._*
+prototype_documents/PROTOTYPE-wipe-me.db*
+# per-machine: packaging/desktop/linux/install.sh pins uv to the distro Python so the system gi imports
+.python-version

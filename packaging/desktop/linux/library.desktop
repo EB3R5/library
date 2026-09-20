@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=library
+Comment=Learning library workbench
+Exec=@@REPO@@/packaging/desktop/linux/run.sh
+Icon=library
+Terminal=false
+Categories=Education;Office;
+StartupWMClass=launcher.py

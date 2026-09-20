@@ -1,0 +1,12 @@
+.venv/
+.git/
+__pycache__/
+*.pyc
+.DS_Store
+._*
+.python-version
+docs/
+prototype_documents/
+packaging/desktop/
+CONTEXT.md
+plan.md

@@ -1,0 +1,79 @@
+erDiagram
+    items {
+        string id PK
+        string kind
+        string title
+        string area
+        string dir FK
+        datetime created_at
+        datetime imported_at
+        datetime updated_at
+        datetime last_opened
+    }
+    renditions {
+        string item_id FK
+        string role
+        string relpath
+        float mtime
+        int size
+    }
+    tags {
+        int id PK
+        string name
+    }
+    item_tags {
+        string item_id FK
+        int tag_id FK
+    }
+    imports {
+        string source_path FK
+        string source_hash
+        string item_id FK
+        datetime imported_at
+    }
+    search {
+        string item_id FK
+        string title
+        string body
+    }
+    item_dir {
+        string dirname PK
+        unknown meta_yaml FK
+        unknown doc_files FK
+        unknown assets
+    }
+    meta_yaml {
+        string title
+        string area
+        unknown tags
+        string kind
+        string source
+        datetime created_at
+        datetime imported_at
+    }
+    doc_file {
+        string relpath PK
+        string suffix
+        unknown frontmatter
+        float mtime
+        int size
+    }
+    source_file {
+        string path PK
+        string root
+        string area
+        string kind
+        string hash
+        string status
+        int local_edits
+    }
+    items ||--o{ renditions : "item_id"
+    items ||--o{ item_tags : "item_id"
+    tags ||--o{ item_tags : "tag_id"
+    items ||--o{ imports : "item_id"
+    items ||--o{ search : "item_id"
+    item_dir ||--o{ items : "dir"
+    item_dir ||--o{ meta_yaml : "meta_file"
+    item_dir ||--o{ doc_file : "files_on_disk"
+    doc_file ||--o{ renditions : "relpath_mtime_size"
+    source_file ||--o{ imports : "source_path"

@@ -1,0 +1,181 @@
+<!doctype html><html><head><meta charset="utf-8">
+<title>library</title>
+<script src="https://unpkg.com/htmx.org@1.9.12"></script>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 13px/1.5 -apple-system, sans-serif; height: 100vh;
+    display: grid; grid-template-columns: 280px 1fr 340px;
+    background: #1e1e24; color: #d6d9de; }
+  mark { background: #b8860b; color: #fff; border-radius: 2px; }
+  a { color: #7fb4e8; }
+  button { background: #4a4add; color: #fff; border: 0; border-radius: 6px;
+    padding: 6px 12px; cursor: pointer; font-size: 12px; }
+  button:hover { filter: brightness(1.15); }
+  button.ghost { background: #33333f; } button.danger { background: #7a3333; }
+  input, textarea, select { width: 100%; background: #14141a; color: #ddd;
+    border: 1px solid #3a3f47; border-radius: 6px; padding: 6px 8px;
+    font-size: 12px; margin: 2px 0 8px; }
+
+  .tree { overflow-y: auto; border-right: 1px solid #333; padding: 12px; }
+  .tree h3 { font-size: 11px; text-transform: uppercase; color: #8888a0;
+    letter-spacing: .1em; margin: 14px 0 4px; }
+  .tree .item { display: flex; gap: 6px; align-items: baseline; padding: 3px 8px;
+    border-radius: 5px; color: #c8c8dc; font-size: 13px; cursor: pointer;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tree .item:hover { background: #33334a; }
+  .tree .item.open { background: #33507a; color: #fff; }
+  .tree .snip { color: #8888a0; font-size: 11px; overflow: hidden;
+    text-overflow: ellipsis; }
+  .badge { font-size: 10px; background: #333344; border-radius: 4px;
+    padding: 0 5px; color: #a0a0b8; flex: none; }
+  .badge.pend { background: #8a6d1a; color: #ffe9a8; }
+  .treefoot { margin-top: 18px; border-top: 1px solid #333; padding-top: 10px;
+    display: flex; flex-direction: column; gap: 6px; }
+
+  .center { position: relative; display: flex; flex-direction: column; min-width: 0; }
+  .center iframe { flex: 1; border: 0; width: 100%; background: #fff; }
+  .center .empty { flex: 1; display: flex; align-items: center;
+    justify-content: center; color: #666; background: #26262e; }
+
+  .runbar { background: #2b2410; color: #ffe9a8; padding: 7px 14px;
+    font-size: 12px; display: flex; gap: 10px; align-items: center;
+    border-bottom: 1px solid #4a3d13; }
+  .runbar.ok { background: #16281a; color: #b9e8c0; border-color: #2e4a2e; }
+  .runbar.err { background: #2b1414; color: #e8b9b9; border-color: #4a2020; }
+  .spin { display: inline-block; animation: r 1s linear infinite; }
+  @keyframes r { to { transform: rotate(360deg); } }
+  .takeover { position: absolute; inset: 0; background: #1e1e24; z-index: 10;
+    display: flex; flex-direction: column; }
+  .diffbox { flex: 1; overflow: auto; background: #14161a; margin: 12px;
+    border: 1px solid #3a3f47; border-radius: 8px; padding: 12px;
+    font: 11.5px/1.6 ui-monospace, Menlo, monospace; white-space: pre-wrap; }
+  .diffbox .add { color: #7ee08a; } .diffbox .del { color: #e08a7e; }
+  .diffbox .hunk { color: #6ea3d8; } .diffbox .ctx { color: #8b919a; }
+  .acceptbar { background: #1c2b1c; padding: 10px 14px; display: flex;
+    gap: 10px; align-items: center; border-top: 1px solid #2e4a2e;
+    font-size: 12px; }
+
+  .panel { border-left: 1px solid #333; overflow-y: auto; display: flex;
+    flex-direction: column; }
+  .tabs { display: flex; border-bottom: 1px solid #333; flex: none; }
+  .tabs .t { flex: 1; text-align: center; padding: 9px; cursor: pointer;
+    color: #8888a0; font-size: 13px; }
+  .tabs .t.on { color: #fff; border-bottom: 2px solid #4a4add; }
+  .inner { padding: 14px; }
+  .inner h2 { font-size: 15px; margin: 2px 0 8px; }
+  dt { color: #8888a0; font-size: 11px; text-transform: uppercase; margin-top: 10px; }
+  dd { margin: 2px 0 0; font-size: 13px; word-break: break-word; }
+  .rend { display: block; padding: 3px 6px; border-radius: 5px; color: #c8c8dc;
+    cursor: pointer; font-size: 12.5px; }
+  .rend:hover { background: #33334a; }
+  .muted { color: #8888a0; font-size: 12px; }
+  .feature h4 { margin: 14px 0 2px; font-size: 12.5px; }
+  .cand { border: 1px solid #333; border-radius: 8px; padding: 8px 10px;
+    margin: 8px 0; }
+  .cand .row { display: flex; gap: 8px; align-items: center; }
+  .cand .title { flex: 1; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; }
+  .warn { color: #ffe9a8; font-size: 11.5px; margin-top: 4px; }
+  textarea.editor { height: 55vh; font: 12px/1.5 ui-monospace, Menlo, monospace; }
+
+  /* drop anywhere: the overlay covers the reader iframe too, so drops land on it */
+  #drop-overlay { display: none; position: fixed; inset: 10px; z-index: 50;
+    border: 3px dashed #7fb4e8; border-radius: 12px; background: rgba(30,30,36,.85);
+    color: #cfe3f7; font-size: 18px; align-items: center; justify-content: center;
+    pointer-events: none; }
+  body.dropping #drop-overlay { display: flex; pointer-events: auto; }
+
+  /* import center (left pane) */
+  .center-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+  .dropzone { border: 2px dashed #4a4f5a; border-radius: 10px; padding: 22px 12px; text-align: center;
+    color: #c8c8dc; cursor: pointer; background: #23232c; }
+  .dropzone:hover { border-color: #7fb4e8; background: #26293a; }
+  button.sm { padding: 3px 8px; font-size: 11px; }
+  .tree h3 .empty { font-weight: normal; letter-spacing: 0; text-transform: none; color: #55556a; }
+  dt { color: #8888a0; font-size: 11px; text-transform: uppercase; }
+</style></head>
+<body hx-headers='{"X-Requested-With":"htmx"}'>
+  <div class="tree">
+    <input name="q" placeholder="Search library…" hx-get="/tree"
+      hx-target="#tree-inner" hx-trigger="keyup changed delay:250ms">
+    <div id="tree-inner">{{ tree|safe }}</div>
+    <div class="treefoot">
+      <dt style="margin:0 0 2px">Area — for new notes and imports</dt>
+      {% include "areapicker.html" %}
+      <form hx-post="/new" hx-target="#side-panel" hx-include="#area-picker">
+        <input name="title" placeholder="New note title…" required>
+        <button style="width:100%">+ New note</button>
+      </form>
+      <form id="upload-form" hx-post="/upload" hx-encoding="multipart/form-data"
+            hx-trigger="change" hx-target="#side-panel" hx-include="#area-picker"
+            hx-on::after-request="this.reset()">
+        <input id="upload-input" type="file" name="files" multiple hidden>
+        <button type="button" class="ghost" style="width:100%"
+          onclick="document.getElementById('upload-input').click()">⇪ Import files…</button>
+      </form>
+      <div id="upload-status" class="muted"></div>
+      <span class="muted" style="cursor:pointer;font-size:11px" hx-get="/import-center"
+        hx-target="#tree-inner">import center · scan sources…</span>
+    </div>
+  </div>
+  <div class="center">
+    {{ stage|safe }}
+    <iframe id="reader" src="about:blank" style="display:none"></iframe>
+    <div id="reader-empty" class="empty">← pick a document</div>
+  </div>
+  <div id="drop-overlay">Drop files to import into <b id="drop-area" style="margin-left:6px"></b></div>
+  <div class="panel" id="side-panel">
+    <div class="inner muted">library · {{ item_count }} items ·
+      <span title="~/learning-library">git-backed</span></div>
+  </div>
+<script>
+function loadDoc(url) {
+  const f = document.getElementById('reader');
+  f.src = url; f.style.display = 'block';
+  document.getElementById('reader-empty').style.display = 'none';
+}
+function clearDoc() {
+  const f = document.getElementById('reader');
+  f.src = 'about:blank'; f.style.display = 'none';
+  document.getElementById('reader-empty').style.display = 'flex';
+}
+
+// --- the shared area picker: "＋ new area…" reveals a name field
+function currentArea() {
+  const sel = document.getElementById('area-select');
+  if (!sel) return 'misc';
+  if (sel.value === '__new__') return document.getElementById('new-area-name').value || 'new area';
+  return sel.value;
+}
+function areaChanged(sel) {
+  const inp = document.getElementById('new-area-name');
+  inp.hidden = sel.value !== '__new__';
+  if (!inp.hidden) inp.focus();
+  syncTargetArea();
+}
+function syncTargetArea() {
+  const t = document.getElementById('target-area'); if (t) t.textContent = currentArea();
+}
+document.addEventListener('input', e => { if (e.target.id === 'new-area-name') syncTargetArea(); });
+
+// --- drop anywhere → same HTMX upload form as the ⇪ Import files… picker
+let dragDepth = 0;
+function dropping(on) {
+  document.body.classList.toggle('dropping', on);
+  if (on) document.getElementById('drop-area').textContent = currentArea();
+}
+window.addEventListener('dragenter', e => {
+  if (!e.dataTransfer || ![...e.dataTransfer.types].includes('Files')) return;
+  e.preventDefault(); dragDepth++; dropping(true);
+});
+window.addEventListener('dragover', e => { if (document.body.classList.contains('dropping')) e.preventDefault(); });
+window.addEventListener('dragleave', e => { if (--dragDepth <= 0) { dragDepth = 0; dropping(false); } });
+window.addEventListener('drop', e => {
+  if (!document.body.classList.contains('dropping')) return;
+  e.preventDefault(); dragDepth = 0; dropping(false);
+  const input = document.getElementById('upload-input');
+  input.files = e.dataTransfer.files;
+  input.dispatchEvent(new Event('change', { bubbles: true }));
+});
+</script>
+</body></html>

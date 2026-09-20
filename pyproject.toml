@@ -1,0 +1,18 @@
+[project]
+name = "library"
+version = "0.1.0"
+description = "Workbench over a managed learning library with Claude-in-the-loop editing"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "jinja2",
+    "python-multipart",
+    "markdown",
+    "pyyaml",
+]
+
+[project.optional-dependencies]
+# Desktop window (packaging/desktop/launcher.py). pywebview pulls pyobjc on macOS; on Linux it
+# uses the distro gi/WebKit2, exposed to the venv by packaging/desktop/linux/install.sh.
+desktop = ["pywebview>=6.2"]

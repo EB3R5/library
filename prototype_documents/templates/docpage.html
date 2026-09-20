@@ -1,0 +1,108 @@
+<!doctype html><html><head><meta charset="utf-8">
+<title>{{ doc.name }}</title>
+<style>
+  body { margin: 0; font: 15px/1.65 -apple-system, sans-serif; color: #222; background: #fff;
+    display: flex; flex-direction: column; height: 100vh; }
+  .head { display: flex; align-items: center; gap: 10px; padding: 8px 16px;
+    border-bottom: 1px solid #e4e1dc; background: #faf9f7; font-size: 13px; flex: none; }
+  .head .name { font-weight: 600; }
+  .head .sp { flex: 1; }
+  .kind { font: 10px/1 ui-monospace, monospace; padding: 3px 5px; border-radius: 4px;
+    background: #e8e6e1; color: #555; text-transform: uppercase; }
+  .head a, .head button { font-size: 12px; color: #2a5db0; background: none; border: 1px solid #cfd6e4;
+    border-radius: 5px; padding: 3px 9px; cursor: pointer; text-decoration: none; }
+  .head button:disabled { color: #aaa; border-color: #e4e4e4; cursor: default; }
+  .head button.primary { background: #2a5db0; color: #fff; border-color: #2a5db0; }
+  .head button.primary:disabled { background: #b9c6dd; border-color: #b9c6dd; color: #fff; }
+  .body { flex: 1; overflow: auto; }
+  article { max-width: 760px; margin: 0 auto; padding: 24px; }
+  article pre, .doc-plain { background: #f4f2ee; padding: 12px; border-radius: 8px;
+    overflow-x: auto; white-space: pre-wrap; font-size: 13px; }
+  article code { background: #f4f2ee; padding: 1px 4px; border-radius: 4px; font-size: 13px; }
+  article table { border-collapse: collapse; } article td, article th { border: 1px solid #ddd; padding: 5px 10px; }
+  .frame { width: 100%; height: 100%; border: 0; }
+  .imgwrap { padding: 24px; text-align: center; } .imgwrap img { max-width: 100%; }
+  .dl { padding: 40px; text-align: center; color: #666; }
+  .editor { display: grid; grid-template-columns: 1fr 1fr; height: 100%; }
+  .editor textarea { border: 0; border-right: 1px solid #e4e1dc; padding: 16px; resize: none;
+    font: 13px/1.5 ui-monospace, Menlo, monospace; outline: none; }
+  .editor .preview { overflow: auto; }
+  @media print { .head { display: none; } .body { overflow: visible; } }
+</style></head>
+<body>
+<div class="head">
+  <span class="name">{{ doc.name }}</span>
+  <span class="kind">{{ doc.kind }}</span>
+  <span id="size" style="color:#888">{{ doc.size }} B</span>
+  <span class="sp"></span>
+  {% if editable %}
+    {% if edit %}
+      <a href="/documents/{{ doc.id }}">View</a>
+      <button class="primary" id="save" disabled>Save</button>
+    {% else %}
+      <a href="/documents/{{ doc.id }}?edit=1">Edit</a>
+    {% endif %}
+  {% endif %}
+  <a href="{{ raw_url }}?download=1" download>Download</a>
+  <button onclick="window.print()">Print</button>
+</div>
+<div class="body">
+{% if edit %}
+  <div class="editor">
+    <textarea id="doc-body" spellcheck="false">{{ body }}</textarea>
+    <div class="preview">
+      {% if doc.kind == 'html' %}
+        <iframe id="pv-frame" class="frame" sandbox="allow-scripts allow-forms allow-popups"></iframe>
+      {% else %}
+        <article id="pv" class="markdown-body">{{ html|safe }}</article>
+      {% endif %}
+    </div>
+  </div>
+{% elif show == 'iframe' %}
+  <iframe class="frame" sandbox="allow-scripts allow-forms allow-popups" src="{{ raw_url }}"></iframe>
+{% elif show == 'image' %}
+  <div class="imgwrap"><img src="{{ raw_url }}" alt="{{ doc.name }}"></div>
+{% elif show == 'pdf' %}
+  <iframe class="frame" src="{{ raw_url }}"></iframe>
+{% elif show == 'inline' %}
+  <article class="markdown-body">{{ html|safe }}</article>
+{% else %}
+  <div class="dl">{{ doc.content_type or 'binary' }} · {{ doc.size }} bytes<br><br>
+    <a href="{{ raw_url }}?download=1" download>⇩ Download {{ doc.name }}</a></div>
+{% endif %}
+</div>
+<script>
+window.DOC = {{ {'id': doc.id, 'kind': doc.kind, 'edit': edit}|tojson }};
+if (DOC.edit) {
+  const ta = document.getElementById('doc-body'), save = document.getElementById('save');
+  let dirty = false, t;
+  const post = (url, body) => fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body) }).then(r => r.json());
+  function preview() {
+    if (DOC.kind === 'html') { document.getElementById('pv-frame').srcdoc = ta.value; return; }
+    if (DOC.kind === 'txt') { document.getElementById('pv').innerHTML =
+      '<pre class="doc-plain">' + ta.value.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])) + '</pre>'; return; }
+    post('/api/documents/render', { body: ta.value }).then(j => document.getElementById('pv').innerHTML = j.html);
+  }
+  ta.addEventListener('input', () => { dirty = true; save.disabled = false;
+    clearTimeout(t); t = setTimeout(preview, 300); });
+  ta.addEventListener('keydown', e => {
+    if (e.key === 'Tab') { e.preventDefault(); const s = ta.selectionStart;
+      ta.setRangeText('  ', s, ta.selectionEnd, 'end'); ta.dispatchEvent(new Event('input')); }
+    if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); doSave(); }
+  });
+  async function doSave() {
+    if (!dirty) return;
+    const j = await post('/api/documents/' + DOC.id, { updates: { body: ta.value } });
+    if (!j.ok) { alert(j.error); return; }
+    dirty = false; save.disabled = true;
+    document.getElementById('size').textContent = new TextEncoder().encode(ta.value).length + ' B';
+    if (parent && parent.refreshPanel) parent.refreshPanel({{ doc.item_id|tojson }});
+  }
+  save.addEventListener('click', doSave);
+  window.addEventListener('beforeunload', e => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
+  if (DOC.kind === 'html') preview();
+  ta.focus();
+}
+</script>
+</body></html>

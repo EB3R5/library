@@ -1,0 +1,83 @@
+{# Third pane (v1 chrome: tabs Info · ✨ Claude). Info tab = the Documents panel
+   as decided on map ticket #11: documents first · one-line rows with hover
+   actions · entry = pinned (fallback first created), marked 📌 in the list ·
+   inline forms, no browser dialogs · metadata folded in a <details>. #}
+<div class="tabs">
+  <div class="t {{ 'on' if tab == 'info' }}"
+    hx-get="/panel/{{ it.id }}?tab=info" hx-target="#side-panel">Info</div>
+  <div class="t {{ 'on' if tab == 'claude' }}"
+    hx-get="/panel/{{ it.id }}?tab=claude" hx-target="#side-panel">✨ Claude</div>
+</div>
+<div class="inner">
+<h2>{{ it.title }}</h2>
+
+{% if tab == 'info' %}
+  <div class="dochead">
+    <span class="n">Documents <span class="badge">{{ docs|length }}</span></span>
+    <label class="ico" title="Upload">⇪<input type="file" multiple style="display:none"
+        onchange="uploadFiles('{{ it.id }}', this.files); this.value=''"></label>
+  </div>
+  <ul class="doc-list dense" id="doc-list-drop" title="drop files anywhere on this list">
+  {% for d in docs %}
+    <li class="doc-line" data-id="{{ d.id }}">
+      <span class="kind kind-{{ d.kind }}">{{ d.kind }}</span>
+      <span class="name" onclick="loadDoc('/documents/{{ d.id }}')">
+        {{ '📌 ' if entry and d.id == entry.id }}{{ d.name }}</span>
+      <span class="sz">{{ d.size|size }}</span>
+      <span class="hover">
+        {% if not entry or d.id != entry.id %}<span class="ico" title="pin as entry"
+          hx-post="/items/{{ it.id }}/pin/{{ d.id }}" hx-target="#side-panel">📌</span>{% endif %}
+        {% if d.editable %}<span class="ico" title="edit" onclick="loadDoc('/documents/{{ d.id }}?edit=1')">✎</span>{% endif %}
+        <span class="ico" title="rename" onclick="var f=this.closest('li').querySelector('.rn'); f.hidden=!f.hidden; if(!f.hidden) f.querySelector('input').focus()">⌥</span>
+        <span class="ico" title="delete" onclick="var f=this.closest('li').querySelector('.del'); f.hidden=!f.hidden">✕</span>
+      </span>
+      <form class="rn inline" hidden hx-post="/documents/{{ d.id }}/rename" hx-target="#side-panel">
+        <input name="name" value="{{ d.name }}"><button class="sm">Save</button></form>
+      <div class="del inline warn" hidden>delete {{ d.name }}?
+        <button class="sm danger" hx-post="/documents/{{ d.id }}/delete" hx-target="#side-panel">yes</button>
+        <button class="sm ghost" onclick="this.parentElement.hidden=true">no</button></div>
+    </li>
+  {% else %}
+    <li class="muted" style="padding:10px 6px">no documents yet — drop files on this list or start a note</li>
+  {% endfor %}
+  </ul>
+  <form class="inline" hx-post="/items/{{ it.id }}/notes" hx-target="#side-panel" style="margin-top:6px">
+    <input name="name" placeholder="New note name…" required><button class="sm ghost">+ Note</button>
+  </form>
+  <div id="status"></div>
+
+  <details style="margin-top:16px">
+    <summary class="muted">{{ it.area }} · {{ tags|join(', ') if tags else 'no tags' }} · updated {{ (updated or '—')[:10] }}</summary>
+    <dl>
+      <dt>Area</dt><dd>{{ it.area }}</dd>
+      <dt>Created · Updated</dt><dd>{{ (it.created_at or '—')[:16] }} · {{ (updated or '—')[:16] }}</dd>
+    </dl>
+    <form hx-post="/items/{{ it.id }}/tags" hx-target="#side-panel" style="margin-top:8px">
+      <input name="tags" value="{{ tags|join(', ') }}" placeholder="comma, separated">
+      <button class="ghost sm">Save tags</button>
+    </form>
+    <div class="muted" style="margin-top:8px"><span hx-post="/items/{{ it.id }}/delete"
+      hx-target="#side-panel" hx-confirm="Delete this item and its {{ docs|length }} documents?"
+      style="cursor:pointer;color:#e08a7e">delete item</span></div>
+  </details>
+
+{% else %}{# ✨ Claude tab — static copy of v1's, non-functional in the prototype #}
+  <p class="muted">⚙️ static in this prototype — forms don't run.</p>
+  <div class="feature">
+    <h4>➕ Integrate addition</h4>
+    <select><option>{{ (entry.name if entry else '—') }}</option></select>
+    <input placeholder="Term / heading"><textarea rows="3" placeholder="Content…"></textarea>
+    <button disabled>🤖 Integrate into document</button>
+    <h4>🔧 Capability retrofit</h4>
+    <input value="a live search box that filters the document's own content units as you type">
+    <button disabled>🤖 Retrofit capability</button>
+    <h4>✏️ Free-form edit</h4>
+    <textarea rows="3" placeholder="Tell Claude what to change…"></textarea>
+    <button disabled>🤖 Edit with Claude</button>
+    <p class="muted" style="margin-top:14px">sonnet · one edit at a time · Accept = new Version, Revert = discard</p>
+  </div>
+{% endif %}
+</div>
+<script>
+  var lst = document.getElementById('doc-list-drop'); if (lst) wireDrop(lst, '{{ it.id }}');
+</script>

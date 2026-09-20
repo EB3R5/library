@@ -1,0 +1,13 @@
+{% for area, aitems in groups %}
+<h3>{{ area }}{% if not aitems %} <span class="empty">· empty</span>{% endif %}</h3>
+{% for it in aitems %}
+  <div class="item {{ 'open' if it.id == open_id }}"
+       hx-get="/open/{{ it.id }}" hx-target="#side-panel">
+    <span style="flex:1;overflow:hidden;text-overflow:ellipsis">{{ it.title }}</span>
+    {% if it.id == pending_id %}<span class="badge pend">pending ✎</span>{% endif %}
+    <span class="badge">{{ it.kind }}</span>
+  </div>
+  {% if it.snip %}<div class="snip">…{{ it.snip|safe }}…</div>{% endif %}
+{% endfor %}
+{% endfor %}
+{% if q and not groups %}<p class="muted">No hits for “{{ q }}”</p>{% endif %}

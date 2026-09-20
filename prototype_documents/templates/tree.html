@@ -1,0 +1,27 @@
+{% for area, aitems in groups %}
+<h3>{{ area }}</h3>
+{% for it in aitems %}
+  <div class="item {{ 'open' if it.id == open_id }}"
+       hx-get="/open/{{ it.id }}" hx-target="#side-panel">
+    <span style="flex:1;overflow:hidden;text-overflow:ellipsis">{{ it.title }}</span>
+    <span class="badge">{{ counts.get(it.id, 0) }} docs</span>
+  </div>
+  {% for h in hits.get(it.id, []) %}
+    <div class="hit" hx-get="/open/{{ it.id }}?doc={{ h.doc_id }}" hx-target="#side-panel">
+      <span class="dn">{{ h.name }}</span> · {{ h.snip|safe }}</div>
+  {% endfor %}
+{% endfor %}
+{% endfor %}
+{% if q and not groups %}<p class="muted">No hits for “{{ q }}”</p>
+{% elif not groups %}<p class="muted">No items yet.</p>{% endif %}
+
+<div class="stats" title="what the DB is holding — refreshed after every action">
+  <div>DB STATE</div>
+  documents <b>{{ stats.docs }}</b> ({{ stats.text_docs }} text inline)<br>
+  inline text <b>{{ stats.inline_bytes|size }}</b><br>
+  blobs <b>{{ stats.blobs }}</b> · <b>{{ stats.blob_bytes|size }}</b>
+  {% if stats.orphan_blobs %}· <span class="warn">{{ stats.orphan_blobs }} orphan</span>{% endif %}<br>
+  fts rows <b>{{ stats.fts_rows }}</b>
+  {% if stats.fts_rows != stats.docs %}<span class="warn">≠ docs</span>{% endif %}<br>
+  deletions audited <b>{{ stats.deletions }}</b>
+</div>

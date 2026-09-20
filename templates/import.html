@@ -1,0 +1,48 @@
+{# Import center — replaces the tree in the left pane. Drops land anywhere in
+   the window (global overlay); the big target here is the visible affordance
+   and doubles as a click-to-choose. Scanned sources sit below. #}
+<div class="center-head">
+  <span class="muted" style="cursor:pointer" hx-get="/tree" hx-target="#tree-inner">← library ({{ item_count }})</span>
+  <h3 style="margin:0">Import</h3>
+</div>
+
+<div class="dropzone" onclick="document.getElementById('upload-input').click()">
+  <div style="font-size:26px">⇪</div>
+  <div>Drop files here — or click to choose</div>
+  <div class="muted" style="margin-top:6px">into <b id="target-area"></b> · md+html with the same
+    name become one item · anything else is kept as-is</div>
+</div>
+<p class="muted" style="margin:6px 0 14px">Pick the target area (or name a new one) in the footer
+below; it applies to drops, the chooser and new notes.</p>
+
+<h3>Scanned sources</h3>
+<p class="muted">Registered folders scanned on demand. Import copies — sources are never touched.</p>
+{% for c in cands %}
+  <div class="cand">
+    <div class="row">
+      <span class="title" title="{{ c.paths[0] }}">{{ c.title }}</span>
+      <span class="badge">{{ c.kind }}</span>
+      <span class="badge {{ 'pend' if c.status == 'changed' }}">{{ c.status }}</span>
+    </div>
+    <div class="row" style="margin-top:6px">
+      <button class="ghost sm" onclick="loadDoc('/peek/{{ c.cid }}')">👁 peek</button>
+      {% if c.status == 'new' %}
+        <button class="sm" hx-post="/import/{{ c.cid }}" hx-target="#tree-inner">⇪ Import</button>
+      {% elif c.status == 'changed' %}
+        <button class="sm" hx-post="/import/{{ c.cid }}" hx-target="#tree-inner"
+          {% if c.local_edits %}hx-confirm="Library copy has {{ c.local_edits }} local edit(s) since import — overwrite? (git keeps the old state)"{% endif %}>
+          ⟳ Re-import (overwrite)</button>
+      {% endif %}
+    </div>
+    {% if c.status == 'changed' and c.local_edits %}
+      <div class="warn">⚠ {{ c.local_edits }} local edit(s) since import</div>
+    {% endif %}
+  </div>
+{% else %}
+  <p class="muted">Nothing found in the registered sources on this machine.</p>
+{% endfor %}
+{% if new_count > 1 %}
+  <button style="width:100%" hx-post="/import-all" hx-target="#tree-inner">
+    ⇪ Import all {{ new_count }} new</button>
+{% endif %}
+<script>syncTargetArea();</script>

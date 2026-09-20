@@ -1,0 +1,90 @@
+<div class="tabs">
+  <div class="t {{ 'on' if tab == 'info' }}"
+    hx-get="/panel/{{ it.id }}?tab=info" hx-target="#side-panel">Info</div>
+  <div class="t {{ 'on' if tab == 'claude' }}"
+    hx-get="/panel/{{ it.id }}?tab=claude" hx-target="#side-panel">✨ Claude</div>
+</div>
+<div class="inner">
+<h2>{{ it.title }}</h2>
+
+{% if tab == 'info' %}
+  <dl>
+    <dt>Kind · Area</dt><dd>{{ it.kind }} · {{ it.area }}</dd>
+    <dt>Imported · Updated</dt>
+    <dd>{{ (it.imported_at or '—')[:16] }} · {{ (it.updated_at or '—')[:16] }}</dd>
+    {% if meta.source %}<dt>Source</dt><dd class="muted">{{ meta.source }}</dd>{% endif %}
+    <dt>Documents</dt>
+    <dd>{% for r in rends %}
+      <span class="rend" onclick="loadDoc('{{ view_url(it, r) }}')">
+        {{ '📌' if r.role == 'entry' else '📄' }} {{ r.relpath }}</span>
+      {% if r.relpath.endswith('.md') %}
+        <span class="muted" style="cursor:pointer;padding-left:22px"
+          hx-get="/editform/{{ it.id }}?relpath={{ r.relpath|urlencode }}"
+          hx-target="#side-panel">✏️ edit</span>
+      {% endif %}
+      {% if rends|length > 1 %}
+        <span class="muted" style="cursor:pointer;padding-left:10px;color:#e08a7e"
+          hx-post="/delete-file/{{ it.id }}" hx-vals='{"relpath": {{ r.relpath|tojson }}}'
+          hx-target="#side-panel"
+          hx-confirm="Delete {{ r.relpath }} from this item? git keeps it in history.">✕ delete file</span>
+      {% endif %}
+    {% endfor %}</dd>
+  </dl>
+  <form hx-post="/area/{{ it.id }}" hx-target="#side-panel" style="margin-top:12px">
+    <dt style="margin-bottom:3px">Area</dt>
+    <div style="display:flex;gap:6px;align-items:flex-start">
+      <div style="flex:1">
+        <select name="area" onchange="var i=this.parentElement.querySelector('input'); i.hidden=this.value!=='__new__'; if(!i.hidden) i.focus()">
+          {% for a in areas %}<option {{ 'selected' if a == it.area }}>{{ a }}</option>{% endfor %}
+          <option value="__new__">＋ new area…</option>
+        </select>
+        <input name="new_area" placeholder="new area name" hidden style="margin-top:-4px">
+      </div>
+      <button class="ghost">Move</button>
+    </div>
+  </form>
+  <form hx-post="/tags/{{ it.id }}" hx-target="#side-panel" style="margin-top:12px">
+    <dt style="margin-bottom:3px">Tags</dt>
+    <input name="tags" value="{{ tags|join(', ') }}" placeholder="comma, separated">
+    <button class="ghost">Save tags</button>
+  </form>
+  <div style="margin-top:22px;border-top:1px solid #333;padding-top:10px">
+    <button class="danger" hx-post="/delete/{{ it.id }}" hx-target="#side-panel"
+      hx-confirm="Delete “{{ it.title }}” and its {{ rends|length }} file(s)? git keeps them in history.">
+      🗑 Delete item</button>
+  </div>
+
+{% else %}{# ✨ Claude tab — ADR 0001 #}
+  {% if busy %}<p class="muted">⚙️ an edit is in flight — resolve it before
+    starting another.</p>{% endif %}
+  <div class="feature">
+    <h4>➕ Integrate addition</h4>
+    <form hx-post="/claude/run" hx-target="#stage" hx-swap="outerHTML">
+      <input type="hidden" name="item_id" value="{{ it.id }}">
+      <input type="hidden" name="feature" value="integrate">
+      {{ target_picker|safe }}
+      <input name="term" placeholder="Term / heading" required>
+      <textarea name="body" rows="3" placeholder="Content…" required></textarea>
+      <button {{ 'disabled' if busy }}>🤖 Integrate into document</button>
+    </form>
+    <h4>🔧 Capability retrofit</h4>
+    <form hx-post="/claude/run" hx-target="#stage" hx-swap="outerHTML">
+      <input type="hidden" name="item_id" value="{{ it.id }}">
+      <input type="hidden" name="feature" value="retrofit">
+      {{ target_picker|safe }}
+      <input name="cap" value="a live search box that filters the document's own content units as you type">
+      <button {{ 'disabled' if busy }}>🤖 Retrofit capability</button>
+    </form>
+    <h4>✏️ Free-form edit</h4>
+    <form hx-post="/claude/run" hx-target="#stage" hx-swap="outerHTML">
+      <input type="hidden" name="item_id" value="{{ it.id }}">
+      <input type="hidden" name="feature" value="freeform">
+      {{ target_picker|safe }}
+      <textarea name="prompt" rows="3" placeholder="Tell Claude what to change…" required></textarea>
+      <button {{ 'disabled' if busy }}>🤖 Edit with Claude</button>
+    </form>
+    <p class="muted" style="margin-top:14px">sonnet · runs on your subscription ·
+      one edit at a time · Accept = commit, Revert = checkout</p>
+  </div>
+{% endif %}
+</div>

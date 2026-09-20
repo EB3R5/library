@@ -1,0 +1,170 @@
+<!doctype html><html><head><meta charset="utf-8">
+<title>PROTOTYPE · library documents-in-db</title>
+<script src="https://unpkg.com/htmx.org@1.9.12"></script>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 13px/1.5 -apple-system, sans-serif; height: 100vh;
+    display: grid; grid-template-columns: 260px 1fr 360px; grid-template-rows: 28px 1fr;
+    background: #1e1e24; color: #d6d9de; }
+  .proto { grid-column: 1 / -1; background: #8a1a6d; color: #ffd9f5; font-size: 12px;
+    display: flex; align-items: center; padding: 0 12px; gap: 14px; }
+  .proto b { letter-spacing: .08em; }
+  a { color: #7fb4e8; }
+  button { background: #4a4add; color: #fff; border: 0; border-radius: 6px;
+    padding: 5px 10px; cursor: pointer; font-size: 12px; }
+  button:hover { filter: brightness(1.15); }
+  button.ghost { background: #33333f; } button.danger { background: #7a3333; }
+  button.sm { padding: 2px 7px; font-size: 11px; }
+  input, select { width: 100%; background: #14141a; color: #ddd;
+    border: 1px solid #3a3f47; border-radius: 6px; padding: 6px 8px;
+    font-size: 12px; margin: 2px 0 8px; }
+
+  .tree { overflow-y: auto; border-right: 1px solid #333; padding: 12px;
+    display: flex; flex-direction: column; }
+  .tree h3 { font-size: 11px; text-transform: uppercase; color: #8888a0;
+    letter-spacing: .1em; margin: 14px 0 4px; }
+  .tree .item { display: flex; gap: 6px; align-items: baseline; padding: 3px 8px;
+    border-radius: 5px; color: #c8c8dc; cursor: pointer; white-space: nowrap; }
+  .tree .item:hover { background: #33334a; }
+  .tree .item.open { background: #33507a; color: #fff; }
+  .hit { margin: 0 0 4px 14px; padding: 2px 8px; border-left: 2px solid #33507a;
+    font-size: 11.5px; color: #a8a8c0; cursor: pointer; border-radius: 0 4px 4px 0; }
+  .hit:hover { background: #2a2a38; color: #d6d9de; }
+  .hit .dn { color: #9fd0ff; }
+  mark { background: #b8860b; color: #fff; border-radius: 2px; padding: 0 1px; }
+  .badge { font-size: 10px; background: #333344; border-radius: 4px;
+    padding: 0 5px; color: #a0a0b8; flex: none; }
+  .treefoot { margin-top: auto; border-top: 1px solid #333; padding-top: 10px; }
+  .stats { font: 11px/1.6 ui-monospace, Menlo, monospace; color: #8888a0;
+    background: #14141a; border-radius: 6px; padding: 8px 10px; margin-top: 10px; }
+  .stats b { color: #d6d9de; }
+
+  .center { position: relative; display: flex; flex-direction: column; min-width: 0; }
+  .center iframe { flex: 1; border: 0; width: 100%; background: #fff; }
+  .center .empty { flex: 1; display: flex; align-items: center;
+    justify-content: center; color: #666; background: #26262e; }
+
+  .panel { border-left: 1px solid #333; overflow-y: auto; }
+  .inner { padding: 14px; }
+  .inner h2 { font-size: 15px; margin: 2px 0 8px; }
+  .muted { color: #8888a0; font-size: 12px; }
+  .warn { color: #ffe9a8; font-size: 11.5px; }
+  .dochead { display: flex; align-items: center; gap: 8px; margin: 14px 0 6px; }
+  .dochead .n { font-size: 11px; text-transform: uppercase; color: #8888a0;
+    letter-spacing: .1em; flex: 1; }
+  .drop { border: 1px dashed #4a4f5a; border-radius: 8px; padding: 10px;
+    text-align: center; color: #8888a0; font-size: 12px; margin: 6px 0 10px; }
+  .drop.over { border-color: #7fb4e8; color: #cfe3f7; background: #23283a; }
+  .doc-list { list-style: none; margin: 0; padding: 0; }
+  .doc-row { display: grid; grid-template-columns: auto 1fr; gap: 2px 8px;
+    padding: 6px 8px; border-radius: 6px; align-items: baseline; }
+  .doc-row:hover { background: #26262e; }
+  .doc-row .name { color: #e2e6ff; cursor: pointer; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+  .doc-row .name:hover { text-decoration: underline; }
+  .doc-row .meta { grid-column: 2; font-size: 11px; color: #8888a0;
+    display: flex; gap: 8px; }
+  .doc-row .meta span[hx-post], .doc-row .meta span.act { cursor: pointer; color: #7fb4e8; }
+  .kind { font: 10px/1 ui-monospace, monospace; padding: 3px 5px; border-radius: 4px;
+    background: #333344; color: #a0a0b8; text-transform: uppercase; }
+  .kind-md { background: #1f3a5c; color: #9fd0ff; }
+  .kind-html { background: #5c2a1f; color: #ffb59f; }
+  .kind-txt { background: #3a3a2a; color: #e6e0a0; }
+  .kind-file { background: #2a3a2a; color: #a8e6a8; }
+  #status { min-height: 18px; font-size: 12px; margin-top: 6px; }
+
+  /* v1 third-pane chrome */
+  .tabs { display: flex; border-bottom: 1px solid #333; }
+  .tabs .t { flex: 1; text-align: center; padding: 9px; cursor: pointer; color: #8888a0; font-size: 13px; }
+  .tabs .t.on { color: #fff; border-bottom: 2px solid #4a4add; }
+  dt { color: #8888a0; font-size: 11px; text-transform: uppercase; margin-top: 10px; }
+  dd { margin: 2px 0 0; font-size: 13px; word-break: break-word; }
+  .feature h4 { margin: 14px 0 2px; font-size: 12.5px; }
+  textarea { width: 100%; background: #14141a; color: #ddd; border: 1px solid #3a3f47;
+    border-radius: 6px; padding: 6px 8px; font-size: 12px; margin: 2px 0 8px; }
+
+  /* documents panel: dense rows, hover actions, inline forms */
+  .doc-list.dense { border: 1px dashed transparent; border-radius: 8px; }
+  .doc-list.dense.over { border-color: #7fb4e8; background: #23283a; }
+  .doc-line { display: flex; gap: 8px; align-items: center; padding: 4px 6px;
+    border-radius: 5px; flex-wrap: wrap; }
+  .doc-line:hover { background: #26262e; }
+  .doc-line .name { flex: 1; color: #e2e6ff; cursor: pointer; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .doc-line .name:hover { text-decoration: underline; }
+  .doc-line .sz { color: #8888a0; font-size: 11px; flex: none; }
+  .doc-line .hover { display: none; gap: 6px; flex: none; }
+  .doc-line:hover .hover { display: flex; }
+  .doc-line .acts { display: flex; gap: 6px; flex: none; }
+  .ico { cursor: pointer; color: #7fb4e8; font-size: 12px; padding: 0 3px; }
+  .ico:hover { color: #fff; }
+  .inline { display: flex; gap: 6px; align-items: center; width: 100%; margin: 4px 0 2px; }
+  .inline input { margin: 0; flex: 1; }
+  .entry-card { border: 1px solid #3a3f47; border-radius: 8px; padding: 10px 12px;
+    margin: 4px 0 14px; background: #24242e; }
+  .ec-head { display: flex; gap: 8px; align-items: center; }
+  .ec-name { flex: 1; font-size: 14px; color: #fff; cursor: pointer; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+  .ec-name:hover { text-decoration: underline; }
+  .ec-actions { display: flex; gap: 6px; margin-top: 8px; }
+  details summary { cursor: pointer; list-style: none; }
+  details summary::before { content: '▸ '; } details[open] summary::before { content: '▾ '; }
+
+</style>
+<body hx-headers='{"X-Requested-With":"htmx"}'>
+  <div class="proto"><b>PROTOTYPE</b> documents-in-the-DB · throwaway · state
+    lives in <code>PROTOTYPE-wipe-me.db</code> · delete the file to reseed</div>
+  <div class="tree">
+    <input name="q" placeholder="Search documents…" hx-get="/tree"
+      hx-target="#tree-inner" hx-trigger="keyup changed delay:250ms, search">
+    <div id="tree-inner">{{ tree|safe }}</div>
+    <div class="treefoot">
+      <form hx-post="/items" hx-target="#side-panel">
+        <input name="title" placeholder="New item title…" required>
+        <select name="area">{% for a in areas %}<option>{{ a }}</option>{% endfor %}</select>
+        <button style="width:100%">+ New item</button>
+      </form>
+    </div>
+  </div>
+  <div class="center">
+    <iframe id="reader" src="about:blank" style="display:none"></iframe>
+    <div id="reader-empty" class="empty">← pick an item, then a document</div>
+  </div>
+  <div class="panel" id="side-panel">
+    <div class="inner muted">Pick an item to see its Info tab.</div>
+  </div>
+<script>
+
+function loadDoc(url) {
+  const f = document.getElementById('reader');
+  f.src = url; f.style.display = 'block';
+  document.getElementById('reader-empty').style.display = 'none';
+}
+function clearDoc() {
+  const f = document.getElementById('reader');
+  f.src = 'about:blank'; f.style.display = 'none';
+  document.getElementById('reader-empty').style.display = 'flex';
+}
+function refreshPanel(itemId) { htmx.ajax('GET', '/panel/' + itemId, '#side-panel'); }
+
+// --- upload: same function serves the picker and the drop zone
+async function uploadFiles(itemId, fileList) {
+  const st = document.getElementById('status');
+  if (!fileList.length) return;
+  const fd = new FormData();
+  for (const f of fileList) fd.append('files', f);
+  st.textContent = '⏳ uploading ' + fileList.length + '…';
+  const r = await fetch('/api/items/' + itemId + '/documents', { method: 'POST', body: fd });
+  const j = await r.json();
+  const msg = j.errors.length ? '⚠ ' + j.errors.join('; ') : '✓ Added ' + j.documents.length;
+  refreshPanel(itemId);
+  setTimeout(() => { const s = document.getElementById('status'); if (s) s.textContent = msg; }, 150);
+}
+function wireDrop(el, itemId) {
+  el.addEventListener('dragover', e => { e.preventDefault(); el.classList.add('over'); });
+  el.addEventListener('dragleave', () => el.classList.remove('over'));
+  el.addEventListener('drop', e => { e.preventDefault(); el.classList.remove('over');
+    uploadFiles(itemId, e.dataTransfer.files); });
+}
+</script>
+</body></html>

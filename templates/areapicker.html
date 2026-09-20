@@ -1,0 +1,10 @@
+{# The one area picker, shared by New note and uploads (both hx-include it).
+   "＋ new area…" reveals a name field; the server resolves area/new_area. #}
+<div id="area-picker" {% if oob %}hx-swap-oob="true"{% endif %}>
+  <select id="area-select" name="area" onchange="areaChanged(this)">
+    {% for a in areas %}<option {{ 'selected' if a == current }}>{{ a }}</option>{% endfor %}
+    <option value="__new__">＋ new area…</option>
+  </select>
+  <input id="new-area-name" name="new_area" placeholder="new area name" hidden
+    style="margin-top:-4px">
+</div>

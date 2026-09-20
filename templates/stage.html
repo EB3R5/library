@@ -1,0 +1,36 @@
+{# Polled center-pane region. idle → empty · running → run bar ·
+   diff → takeover per ADR 0001 · error/nochange → dismissible bar #}
+<div id="stage"
+  {% if run.status == 'running' %}hx-get="/claude/stage" hx-trigger="every 1.5s"
+  hx-swap="outerHTML"{% endif %}>
+
+{% if run.status == 'running' %}
+  <div class="runbar"><span class="spin">⚙️</span>
+    Claude working on <b>{{ run.title }}</b> — {{ run.summary }}
+    <span class="muted">({{ run.relpath }})</span></div>
+
+{% elif run.status == 'diff' %}
+  <div class="takeover">
+    <div class="runbar ok">✅ {{ run.summary }} — review the diff
+      {% if run.detail %}<span class="muted">({{ run.detail }})</span>{% endif %}</div>
+    <div class="diffbox">{{ diff_html|safe }}</div>
+    <div class="acceptbar">
+      working tree dirty · HEAD clean
+      <button hx-post="/claude/accept" hx-target="#stage" hx-swap="outerHTML">
+        ✓ Accept (commit)</button>
+      <button class="danger" hx-post="/claude/revert" hx-target="#stage"
+        hx-swap="outerHTML">↩ Revert (checkout)</button>
+    </div>
+  </div>
+
+{% elif run.status in ('error', 'nochange') %}
+  <div class="runbar err">{{ '🚫' if run.status == 'error' else '∅' }}
+    {{ run.summary }} — {{ run.detail }}
+    <button class="ghost" hx-post="/claude/dismiss" hx-target="#stage"
+      hx-swap="outerHTML">OK</button></div>
+{% endif %}
+</div>
+{% if reload_doc %}<script>
+  const f = document.getElementById('reader');
+  if (f && f.src && f.src !== 'about:blank') f.src = f.src.split('#')[0];
+</script>{% endif %}
