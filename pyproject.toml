@@ -1,7 +1,7 @@
 [project]
 name = "library"
-version = "0.1.0"
-description = "Workbench over a managed learning library with Claude-in-the-loop editing"
+version = "2.0.0"
+description = "Workbench over a documents store (SQLite) with Claude-in-the-loop editing"
 requires-python = ">=3.11"
 license = "MIT"
 license-files = ["LICENSE"]
@@ -11,10 +11,13 @@ dependencies = [
     "jinja2",
     "python-multipart",
     "markdown",
-    "pyyaml",
+    "nh3",
 ]
 
 [project.optional-dependencies]
 # Desktop window (packaging/desktop/launcher.py). pywebview pulls pyobjc on macOS; on Linux it
 # uses the distro gi/WebKit2, exposed to the venv by packaging/desktop/linux/install.sh.
 desktop = ["pywebview>=6.2"]
+
+[dependency-groups]
+dev = ["pytest", "httpx"]

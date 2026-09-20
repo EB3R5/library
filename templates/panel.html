@@ -1,3 +1,6 @@
+{# Third pane: tabs Info · ✨ Claude (ADR 0001). Info tab = the panel verdict
+   (ticket #11): documents first · one-line rows with hover actions · entry =
+   pinned else first created, marked 📌 · inline forms · metadata folded. #}
 <div class="tabs">
   <div class="t {{ 'on' if tab == 'info' }}"
     hx-get="/panel/{{ it.id }}?tab=info" hx-target="#side-panel">Info</div>
@@ -8,61 +11,85 @@
 <h2>{{ it.title }}</h2>
 
 {% if tab == 'info' %}
-  <dl>
-    <dt>Kind · Area</dt><dd>{{ it.kind }} · {{ it.area }}</dd>
-    <dt>Imported · Updated</dt>
-    <dd>{{ (it.imported_at or '—')[:16] }} · {{ (it.updated_at or '—')[:16] }}</dd>
-    {% if meta.source %}<dt>Source</dt><dd class="muted">{{ meta.source }}</dd>{% endif %}
-    <dt>Documents</dt>
-    <dd>{% for r in rends %}
-      <span class="rend" onclick="loadDoc('{{ view_url(it, r) }}')">
-        {{ '📌' if r.role == 'entry' else '📄' }} {{ r.relpath }}</span>
-      {% if r.relpath.endswith('.md') %}
-        <span class="muted" style="cursor:pointer;padding-left:22px"
-          hx-get="/editform/{{ it.id }}?relpath={{ r.relpath|urlencode }}"
-          hx-target="#side-panel">✏️ edit</span>
-      {% endif %}
-      {% if rends|length > 1 %}
-        <span class="muted" style="cursor:pointer;padding-left:10px;color:#e08a7e"
-          hx-post="/delete-file/{{ it.id }}" hx-vals='{"relpath": {{ r.relpath|tojson }}}'
-          hx-target="#side-panel"
-          hx-confirm="Delete {{ r.relpath }} from this item? git keeps it in history.">✕ delete file</span>
-      {% endif %}
-    {% endfor %}</dd>
-  </dl>
-  <form hx-post="/area/{{ it.id }}" hx-target="#side-panel" style="margin-top:12px">
-    <dt style="margin-bottom:3px">Area</dt>
-    <div style="display:flex;gap:6px;align-items:flex-start">
-      <div style="flex:1">
-        <select name="area" onchange="var i=this.parentElement.querySelector('input'); i.hidden=this.value!=='__new__'; if(!i.hidden) i.focus()">
-          {% for a in areas %}<option {{ 'selected' if a == it.area }}>{{ a }}</option>{% endfor %}
-          <option value="__new__">＋ new area…</option>
-        </select>
-        <input name="new_area" placeholder="new area name" hidden style="margin-top:-4px">
-      </div>
-      <button class="ghost">Move</button>
-    </div>
-  </form>
-  <form hx-post="/tags/{{ it.id }}" hx-target="#side-panel" style="margin-top:12px">
-    <dt style="margin-bottom:3px">Tags</dt>
-    <input name="tags" value="{{ tags|join(', ') }}" placeholder="comma, separated">
-    <button class="ghost">Save tags</button>
-  </form>
-  <div style="margin-top:22px;border-top:1px solid #333;padding-top:10px">
-    <button class="danger" hx-post="/delete/{{ it.id }}" hx-target="#side-panel"
-      hx-confirm="Delete “{{ it.title }}” and its {{ rends|length }} file(s)? git keeps them in history.">
-      🗑 Delete item</button>
+  <div class="dochead">
+    <span class="n">Documents <span class="badge">{{ docs|length }}</span></span>
+    <label class="ico" title="Upload files">⇪<input type="file" multiple style="display:none"
+        onchange="uploadFiles('{{ it.id }}', this.files); this.value=''"></label>
   </div>
+  <ul class="doc-list" id="doc-list-drop" title="drop files anywhere on this list">
+  {% for d in docs %}
+    <li class="doc-line" data-id="{{ d.id }}">
+      <span class="kind kind-{{ d.kind }}">{{ d.kind }}</span>
+      <span class="name" onclick="loadDoc('/documents/{{ d.id }}')">
+        {{ '📌 ' if entry and d.id == entry.id }}{{ d.name }}</span>
+      <span class="sz">{{ d.size|size }}</span>
+      <span class="hover">
+        {% if not entry or d.id != entry.id %}<span class="ico" title="pin as entry document"
+          hx-post="/items/{{ it.id }}/pin/{{ d.id }}" hx-target="#side-panel">📌</span>{% endif %}
+        {% if d.editable %}<span class="ico" title="edit" onclick="loadDoc('/documents/{{ d.id }}?edit=1')">✎</span>{% endif %}
+        <span class="ico" title="rename" onclick="var f=this.closest('li').querySelector('.rn'); f.hidden=!f.hidden; if(!f.hidden) f.querySelector('input').focus()">⌥</span>
+        <span class="ico" title="delete" onclick="var f=this.closest('li').querySelector('.del'); f.hidden=!f.hidden">✕</span>
+      </span>
+      <form class="rn inline" hidden hx-post="/documents/{{ d.id }}/rename" hx-target="#side-panel">
+        <input name="name" value="{{ d.name }}"><button class="sm">Save</button></form>
+      <div class="del inline warn" hidden>delete {{ d.name }}?
+        <button class="sm danger" hx-post="/documents/{{ d.id }}/delete" hx-target="#side-panel">yes</button>
+        <button class="sm ghost" onclick="this.parentElement.hidden=true">no</button></div>
+    </li>
+  {% else %}
+    <li class="muted" style="padding:10px 6px">no documents yet — drop files on this list, use ⇪, or start a note</li>
+  {% endfor %}
+  </ul>
+  <form class="inline" hx-post="/items/{{ it.id }}/notes" hx-target="#side-panel" style="margin-top:6px">
+    <input name="name" placeholder="New note name…"><button class="sm ghost">+ Note</button>
+  </form>
+  <div id="status" class="{{ 'warn' if msg.startswith('⚠') }}">{{ msg }}</div>
 
-{% else %}{# ✨ Claude tab — ADR 0001 #}
-  {% if busy %}<p class="muted">⚙️ an edit is in flight — resolve it before
-    starting another.</p>{% endif %}
+  <details style="margin-top:16px">
+    <summary class="muted">{{ it.area }} · {{ tags|join(', ') if tags else 'no tags' }} · updated {{ (it.updated_at or '—')[:10] }}</summary>
+    <dl>
+      <dt>Created · Updated</dt><dd>{{ (it.created_at or '—')[:16] }} · {{ (it.updated_at or '—')[:16] }}</dd>
+    </dl>
+    <form hx-post="/items/{{ it.id }}/area" hx-target="#side-panel" style="margin-top:8px">
+      <dt style="margin:0 0 3px">Area</dt>
+      <div style="display:flex;gap:6px;align-items:flex-start">
+        <div style="flex:1">
+          <select name="area" onchange="var i=this.parentElement.querySelector('input'); i.hidden=this.value!=='__new__'; if(!i.hidden) i.focus()">
+            {% for a in areas %}<option {{ 'selected' if a == it.area }}>{{ a }}</option>{% endfor %}
+            <option value="__new__">＋ new area…</option>
+          </select>
+          <input name="new_area" placeholder="new area name" hidden style="margin-top:-4px">
+        </div>
+        <button class="ghost sm">Move</button>
+      </div>
+    </form>
+    <form hx-post="/items/{{ it.id }}/tags" hx-target="#side-panel" style="margin-top:8px">
+      <dt style="margin:0 0 3px">Tags</dt>
+      <input name="tags" value="{{ tags|join(', ') }}" placeholder="comma, separated">
+      <button class="ghost sm">Save tags</button>
+    </form>
+    <div class="muted" style="margin-top:12px"><span hx-post="/items/{{ it.id }}/delete"
+      hx-target="#side-panel" hx-confirm="Delete “{{ it.title }}” and its {{ docs|length }} document(s)? Their versions go too."
+      style="cursor:pointer;color:#e08a7e">🗑 delete item</span></div>
+  </details>
+
+{% else %}{# ✨ Claude tab — ADR 0001; v1's three feature forms #}
+  {% if busy %}<p class="muted">⚙️ an edit is in flight — resolve it before starting another.</p>{% endif %}
+  {% if not text_docs %}
+    <p class="muted">No text documents to edit — add a note, or upload an .md / .html / .txt.</p>
+  {% else %}
+  {% set picker %}
+    {% if text_docs|length > 1 %}<select name="doc_id">
+      {% for d in text_docs %}<option value="{{ d.id }}" {{ 'selected' if entry and d.id == entry.id }}>{{ d.name }}</option>{% endfor %}
+    </select>{% else %}<input type="hidden" name="doc_id" value="{{ text_docs[0].id }}">
+    <p class="muted" style="margin:0 0 6px">→ {{ text_docs[0].name }}</p>{% endif %}
+  {% endset %}
   <div class="feature">
     <h4>➕ Integrate addition</h4>
     <form hx-post="/claude/run" hx-target="#stage" hx-swap="outerHTML">
       <input type="hidden" name="item_id" value="{{ it.id }}">
       <input type="hidden" name="feature" value="integrate">
-      {{ target_picker|safe }}
+      {{ picker }}
       <input name="term" placeholder="Term / heading" required>
       <textarea name="body" rows="3" placeholder="Content…" required></textarea>
       <button {{ 'disabled' if busy }}>🤖 Integrate into document</button>
@@ -71,7 +98,7 @@
     <form hx-post="/claude/run" hx-target="#stage" hx-swap="outerHTML">
       <input type="hidden" name="item_id" value="{{ it.id }}">
       <input type="hidden" name="feature" value="retrofit">
-      {{ target_picker|safe }}
+      {{ picker }}
       <input name="cap" value="a live search box that filters the document's own content units as you type">
       <button {{ 'disabled' if busy }}>🤖 Retrofit capability</button>
     </form>
@@ -79,12 +106,17 @@
     <form hx-post="/claude/run" hx-target="#stage" hx-swap="outerHTML">
       <input type="hidden" name="item_id" value="{{ it.id }}">
       <input type="hidden" name="feature" value="freeform">
-      {{ target_picker|safe }}
+      {{ picker }}
       <textarea name="prompt" rows="3" placeholder="Tell Claude what to change…" required></textarea>
       <button {{ 'disabled' if busy }}>🤖 Edit with Claude</button>
     </form>
     <p class="muted" style="margin-top:14px">sonnet · runs on your subscription ·
-      one edit at a time · Accept = commit, Revert = checkout</p>
+      one edit at a time · Accept = new Version, Revert = discard</p>
   </div>
+  {% endif %}
 {% endif %}
 </div>
+<script>
+  window.OPEN_ITEM = '{{ it.id }}';
+  (function(){ var lst = document.getElementById('doc-list-drop'); if (lst) wireDrop(lst, '{{ it.id }}'); })();
+</script>

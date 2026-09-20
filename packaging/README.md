@@ -9,10 +9,11 @@ the launcher by path.
 entry and the macOS `.app` attach a window to whatever answers `/healthz` there; only when
 nothing does, they start their own uvicorn on a free port and stop it when the window closes.
 The dev server (`./run.sh`) is for development: run it with the container stopped, or it fails
-to bind. Never have two servers on the same `~/learning-library` at once — it holds a SQLite
-file and the git undo store.
+to bind. Never have two servers on the same `~/learning-library` at once — they would share
+one SQLite database.
 
-**Data.** `~/learning-library/` (items, `library.db`, the git repo). `LIBRARY_HOME` overrides
+**Data.** `~/learning-library/library.db` is the data (plus `scratch/` during a Claude run and
+`export/` after a backup). `LIBRARY_HOME` overrides
 the path; the image sets it to `/data`, and the homelab compose bind-mounts
 `~/learning-library` there.
 
@@ -26,14 +27,14 @@ container (`docker compose stop library` in the homelab repo) and open the windo
 
 ```bash
 ./run.sh              # uv run app.py → http://127.0.0.1:8900
-./run.sh rebuild      # regenerate library.db from ~/learning-library/items
+./run.sh export       # backup tree + DB copy → ~/learning-library/export (or a given root)
 ```
 
 ## docker
 
 Build context is the repo root. There is no build backend (flat modules), so the image installs
-the locked dependencies with uv and runs the modules from `/app`. `git` is installed for gitops;
-a fixed git identity is baked in because the container runs as the host uid with no passwd entry.
+the locked dependencies with uv and runs the modules from `/app`. `HOME` is set to the data mount
+because the container may run as the host uid with no passwd entry.
 
 ```bash
 docker build -f packaging/docker/Dockerfile -t library .

@@ -1,24 +1,26 @@
 # library
 
 A personal learning library with a single-screen **Workbench**: a filterable
-tree of items, an iframe reader, and an Info / Claude panel, all over a plain
-folder you own. Documents can be edited **Claude-in-the-loop**: one button
-runs `claude -p` against the file, the result shows as a diff, and you Accept
-or Revert.
+tree of items, a document reader, and an Info / Claude panel. Items hold
+documents, and the documents live in SQLite. Documents can be edited
+**Claude-in-the-loop**: one button runs `claude -p` against a scratch copy,
+the result shows as a diff, and you Accept or Revert.
 
-- **Local and file-first.** Items are directories under `~/learning-library/items/`
-  with a `meta.yaml`. SQLite is only an index cache; `./run.sh rebuild` regenerates it.
+- **SQLite is the data.** `~/learning-library/library.db` holds every item and
+  document. Text documents keep their body in the row, other files are stored
+  as blobs. There is no folder tree to keep in sync and no rebuild step.
 - **Any file type.** Markdown, HTML, text, PDFs and images open in the reader.
   Everything else is kept and served byte-for-byte.
-- **Undo is git.** The library folder is a git repo. Every import, edit,
-  delete and accepted Claude change is a commit, so `git log` there has all history.
+- **Undo is version history.** Every save, restore and accepted Claude edit
+  files the previous body as a Version. The History view previews and restores.
+- **HTML is sandboxed.** Uploaded HTML never runs with the app's origin. It
+  renders in a sandboxed iframe, and the raw endpoint sends a sandbox CSP.
 - **Claude edits are explicit.** Nothing runs without a button press. One edit
   in flight at a time, limited to read/edit tools, no shell and no network.
 
 ## Requirements
 
 - Python 3.11+ and [uv](https://docs.astral.sh/uv/)
-- `git` on the PATH
 - Optional: the [Claude Code CLI](https://claude.com/claude-code) (`claude`) for the Claude tab
 
 ## Quick start
@@ -27,33 +29,45 @@ or Revert.
 git clone https://github.com/EB3R5/library.git
 cd library
 ./run.sh              # http://127.0.0.1:8900
-./run.sh rebuild      # regenerate library.db from ~/learning-library/items
+./run.sh export       # backup: plain-file tree + DB copy in ~/learning-library/export
 ```
 
-The first run creates `~/learning-library/` and initialises it as a git repo.
-Set `LIBRARY_HOME` to put the data somewhere else.
+The first run creates `~/learning-library/` and the database schema. Set
+`LIBRARY_HOME` to put the data somewhere else. A v1 `library.db` found there
+is moved aside as `library.v1.db`, never migrated.
 
 ## Using it
 
-**Getting documents in.** Drop files anywhere on the Workbench, or click
-**⇪ Import files…** for the OS chooser. Files dropped together become one item,
-grouped by name, so an `.md` and `.html` pair stays a pair. **import center ·
-scan sources…** swaps the tree for a drop target plus an import-by-copy from
-the source folders registered in `config.py`. Sources are never written to,
-and re-scans are idempotent.
+**Items and documents.** Make an item with the form under the tree, giving it
+a title and an area. Areas are yours to name: the picker has a **＋ new
+area…** entry, and an item's Info tab can move it. Each item holds any number
+of documents. The document that opens when you click the item is the one you
+pinned with 📌, or the first one added.
 
-**Areas and tags.** Areas are the top-level grouping in the tree and are yours
-to name: the footer's area picker has a **＋ new area…** entry, and an item's
-Info tab can move it to any area. Tags are free-form labels for filtering.
-An item's area lives in its `meta.yaml`; an empty named area exists only in
-the index and vanishes on rebuild.
+**Getting documents in.** Drop files on the document list in the Info tab,
+click ⇪ for the OS chooser, or drop files anywhere on the Workbench. With an
+item open, a drop adds to it. With nothing open, a drop makes a new item
+titled after the first file. Text over 4 MB, files over 50 MB and empty files
+are refused individually, and the rest of the batch still lands. Names are
+unique per item, so a second `report.md` becomes `report (2).md`.
 
-**Editing.** Text documents (`.md`, `.html`, `.txt`) are editable in place from
-the Info tab. A new note is a markdown file holding just its title heading, created in the current area.
+**Reading and editing.** The document page has a head bar with the name, a
+kind chip, the size, and View / Edit / History / Download / Print. Edit mode
+is a textarea with a live preview, Tab inserts two spaces, and Ctrl-S saves.
+Markdown is rendered server-side and sanitized. A leading YAML front matter
+block is hidden from the view and the search index but kept in the body.
+Renaming `notes.md` to `notes.html` re-classifies it. Files never change kind.
 
-**Deleting.** The Info tab deletes an item, or single files of a multi-file
-item. Deletions are commits in `~/learning-library`, so
-`git log -- items/<dir>` there still has everything.
+**History.** Every body change keeps the previous body as a Version with its
+cause: `save`, `restore`, or `claude: …`. The History view lists them by
+time, size and cause, previews any of them, and restores with one click.
+Restoring is itself an edit, so it is undoable. Deleting a document deletes
+its versions.
+
+**Search.** The box above the tree matches document text, document names,
+item titles and tags. Item hits rank above document hits, and matching
+documents are listed under their item with a snippet. A half-typed word
+matches by prefix, and a dotted name like `data.bin` still hits.
 
 **Claude tab.** Pick a text document and one of three features:
 
@@ -63,10 +77,19 @@ item. Deletions are commits in `~/learning-library`, so
 | retrofit | add a capability to a self-contained HTML document with inline JS/CSS only |
 | free-form | apply your prompt to the document |
 
-The run uses the item directory as its working directory, so sibling documents
-are readable context. The diff against HEAD appears in the panel. Accept
-commits it, Revert checks the file out. Model, timeout and tool cap are set in
-`config.py`.
+The item's text documents are written to a scratch directory and Claude runs
+there, so sibling documents are readable context. The diff against the stored
+body takes over the center pane. Accept files a Version and stores the new
+body. Revert discards the scratch copy. Edits Claude makes to other files are
+ignored and listed. If the document changed while the run was in flight,
+Accept refuses and only Revert is offered. Model, timeout and tool cap are set
+in `config.py`.
+
+**Backup.** `./run.sh export [root]` writes `<area>/<item>/<document>` as
+plain files with an `item.json` per item, plus a copy of `library.db` made
+with SQLite's online backup. Running it again overwrites in place and prunes,
+so a scheduled export is idempotent. Restore is stopping the app and copying
+that database back.
 
 ## Run and package
 
@@ -75,36 +98,34 @@ commits it, Revert checks the file out. Model, timeout and tool cap are set in
 (`uv run --extra desktop packaging/desktop/launcher.py`), a Linux `.desktop`
 entry with installer, a macOS `.app` bundle, and a Docker image for running
 it as a homelab service. The app doesn't change per target; `/healthz` is what
-every target probes. The Docker image has no `claude` CLI, so Claude edits
-need a local run.
+every target probes.
 
 ## Layout
 
 ```
-app.py               FastAPI routes and the uvicorn entry point
-libfs.py             item directories, meta.yaml, text extraction, rebuild
-importer.py          source scan, review, copy-in
-claude_runner.py     the claude -p runner and its single global slot
-gitops.py            git in the library folder as the undo store
-db.py                SQLite index schema and queries
-config.py            paths, port, registered sources, Claude settings
-templates/           HTMX partials for the Workbench
+app.py               FastAPI routes, the JSON API and the uvicorn entry point
+documents.py         the store: schema, items, documents, blobs, versions, search
+claude_runner.py     the claude -p runner over a scratch directory, one global slot
+export.py            the backup command
+config.py            paths, port, Claude settings
+templates/           HTMX partials for the Workbench and the document page
+tests/               pytest suite over the store and the API
 packaging/           desktop, Linux, macOS and Docker targets
 docs/                design sketch, ADRs, schema diagram, research notes
-prototype_documents/ throwaway prototype for the v2 documents-in-SQLite design
 ```
 
 ## Status
 
-v1 is what runs. A v2 spec that moves document bodies into SQLite with
-per-document version history is locked but not built. See [plan.md](plan.md),
-[ADR 0002](docs/adr/0002-documents-in-sqlite.md) and
-[CONTEXT.md](CONTEXT.md) for the vocabulary. `./run.sh proto` runs the v2
-prototype on port 8901.
+This is v2, built to [plan.md](plan.md): documents live in SQLite with
+per-document version history, replacing v1's managed folder and git undo
+store. The decision is [ADR 0002](docs/adr/0002-documents-in-sqlite.md) and
+the vocabulary is [CONTEXT.md](CONTEXT.md). v1 data is not migrated. Upload
+the files from a v1 `items/` tree to bring them across.
 
 The design came out of two earlier prototypes: a Workbench shell with HTMX
 search and iframe reading, and a Claude-in-the-loop glossary editor. The
 library-side decisions are recorded in [docs/DESIGN-SKETCH.md](docs/DESIGN-SKETCH.md).
+The Docker image has no `claude` CLI, so Claude edits need a local run.
 
 ## License
 

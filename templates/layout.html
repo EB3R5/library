@@ -4,33 +4,41 @@
 <style>
   * { box-sizing: border-box; }
   body { margin: 0; font: 13px/1.5 -apple-system, sans-serif; height: 100vh;
-    display: grid; grid-template-columns: 280px 1fr 340px;
+    display: grid; grid-template-columns: 280px 1fr 360px;
     background: #1e1e24; color: #d6d9de; }
-  mark { background: #b8860b; color: #fff; border-radius: 2px; }
+  mark { background: #b8860b; color: #fff; border-radius: 2px; padding: 0 1px; }
   a { color: #7fb4e8; }
   button { background: #4a4add; color: #fff; border: 0; border-radius: 6px;
     padding: 6px 12px; cursor: pointer; font-size: 12px; }
   button:hover { filter: brightness(1.15); }
   button.ghost { background: #33333f; } button.danger { background: #7a3333; }
+  button.sm { padding: 3px 8px; font-size: 11px; }
   input, textarea, select { width: 100%; background: #14141a; color: #ddd;
     border: 1px solid #3a3f47; border-radius: 6px; padding: 6px 8px;
     font-size: 12px; margin: 2px 0 8px; }
 
-  .tree { overflow-y: auto; border-right: 1px solid #333; padding: 12px; }
+  .tree { overflow-y: auto; border-right: 1px solid #333; padding: 12px;
+    display: flex; flex-direction: column; }
   .tree h3 { font-size: 11px; text-transform: uppercase; color: #8888a0;
     letter-spacing: .1em; margin: 14px 0 4px; }
+  .tree h3 .empty { font-weight: normal; letter-spacing: 0; text-transform: none; color: #55556a; }
   .tree .item { display: flex; gap: 6px; align-items: baseline; padding: 3px 8px;
-    border-radius: 5px; color: #c8c8dc; font-size: 13px; cursor: pointer;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    border-radius: 5px; color: #c8c8dc; cursor: pointer; white-space: nowrap; }
   .tree .item:hover { background: #33334a; }
   .tree .item.open { background: #33507a; color: #fff; }
-  .tree .snip { color: #8888a0; font-size: 11px; overflow: hidden;
-    text-overflow: ellipsis; }
+  .tree .snip { color: #8888a0; font-size: 11px; margin: 0 0 4px 14px; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+  .hit { margin: 0 0 4px 14px; padding: 2px 8px; border-left: 2px solid #33507a;
+    font-size: 11.5px; color: #a8a8c0; cursor: pointer; border-radius: 0 4px 4px 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hit:hover { background: #2a2a38; color: #d6d9de; }
+  .hit .dn { color: #9fd0ff; }
   .badge { font-size: 10px; background: #333344; border-radius: 4px;
     padding: 0 5px; color: #a0a0b8; flex: none; }
   .badge.pend { background: #8a6d1a; color: #ffe9a8; }
-  .treefoot { margin-top: 18px; border-top: 1px solid #333; padding-top: 10px;
-    display: flex; flex-direction: column; gap: 6px; }
+  .treefoot { margin-top: auto; border-top: 1px solid #333; padding-top: 10px; }
+  dt { color: #8888a0; font-size: 11px; text-transform: uppercase; margin-top: 10px; }
+  dd { margin: 2px 0 0; font-size: 13px; word-break: break-word; }
 
   .center { position: relative; display: flex; flex-direction: column; min-width: 0; }
   .center iframe { flex: 1; border: 0; width: 100%; background: #fff; }
@@ -39,7 +47,7 @@
 
   .runbar { background: #2b2410; color: #ffe9a8; padding: 7px 14px;
     font-size: 12px; display: flex; gap: 10px; align-items: center;
-    border-bottom: 1px solid #4a3d13; }
+    border-bottom: 1px solid #4a3d13; flex-wrap: wrap; }
   .runbar.ok { background: #16281a; color: #b9e8c0; border-color: #2e4a2e; }
   .runbar.err { background: #2b1414; color: #e8b9b9; border-color: #4a2020; }
   .spin { display: inline-block; animation: r 1s linear infinite; }
@@ -52,31 +60,50 @@
   .diffbox .add { color: #7ee08a; } .diffbox .del { color: #e08a7e; }
   .diffbox .hunk { color: #6ea3d8; } .diffbox .ctx { color: #8b919a; }
   .acceptbar { background: #1c2b1c; padding: 10px 14px; display: flex;
-    gap: 10px; align-items: center; border-top: 1px solid #2e4a2e;
-    font-size: 12px; }
+    gap: 10px; align-items: center; border-top: 1px solid #2e4a2e; font-size: 12px; }
+  .acceptbar.stale { background: #2b1414; border-color: #4a2020; }
 
-  .panel { border-left: 1px solid #333; overflow-y: auto; display: flex;
-    flex-direction: column; }
-  .tabs { display: flex; border-bottom: 1px solid #333; flex: none; }
+  .panel { border-left: 1px solid #333; overflow-y: auto; }
+  .tabs { display: flex; border-bottom: 1px solid #333; }
   .tabs .t { flex: 1; text-align: center; padding: 9px; cursor: pointer;
     color: #8888a0; font-size: 13px; }
   .tabs .t.on { color: #fff; border-bottom: 2px solid #4a4add; }
   .inner { padding: 14px; }
   .inner h2 { font-size: 15px; margin: 2px 0 8px; }
-  dt { color: #8888a0; font-size: 11px; text-transform: uppercase; margin-top: 10px; }
-  dd { margin: 2px 0 0; font-size: 13px; word-break: break-word; }
-  .rend { display: block; padding: 3px 6px; border-radius: 5px; color: #c8c8dc;
-    cursor: pointer; font-size: 12.5px; }
-  .rend:hover { background: #33334a; }
   .muted { color: #8888a0; font-size: 12px; }
+  .warn { color: #ffe9a8; font-size: 11.5px; }
   .feature h4 { margin: 14px 0 2px; font-size: 12.5px; }
-  .cand { border: 1px solid #333; border-radius: 8px; padding: 8px 10px;
-    margin: 8px 0; }
-  .cand .row { display: flex; gap: 8px; align-items: center; }
-  .cand .title { flex: 1; overflow: hidden; text-overflow: ellipsis;
-    white-space: nowrap; }
-  .warn { color: #ffe9a8; font-size: 11.5px; margin-top: 4px; }
-  textarea.editor { height: 55vh; font: 12px/1.5 ui-monospace, Menlo, monospace; }
+
+  /* documents panel: dense rows, hover actions, inline forms */
+  .dochead { display: flex; align-items: center; gap: 8px; margin: 10px 0 6px; }
+  .dochead .n { font-size: 11px; text-transform: uppercase; color: #8888a0;
+    letter-spacing: .1em; flex: 1; }
+  .doc-list { list-style: none; margin: 0; padding: 0; border: 1px dashed transparent;
+    border-radius: 8px; min-height: 36px; }
+  .doc-list.over { border-color: #7fb4e8; background: #23283a; }
+  .doc-line { display: flex; gap: 8px; align-items: center; padding: 4px 6px;
+    border-radius: 5px; flex-wrap: wrap; }
+  .doc-line:hover { background: #26262e; }
+  .doc-line .name { flex: 1; color: #e2e6ff; cursor: pointer; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .doc-line .name:hover { text-decoration: underline; }
+  .doc-line .sz { color: #8888a0; font-size: 11px; flex: none; }
+  .doc-line .hover { display: none; gap: 6px; flex: none; }
+  .doc-line:hover .hover { display: flex; }
+  .ico { cursor: pointer; color: #7fb4e8; font-size: 12px; padding: 0 3px; }
+  .ico:hover { color: #fff; }
+  .inline { display: flex; gap: 6px; align-items: center; width: 100%; margin: 4px 0 2px; }
+  .inline input { margin: 0; flex: 1; }
+  .inline[hidden] { display: none; }
+  .kind { font: 10px/1 ui-monospace, monospace; padding: 3px 5px; border-radius: 4px;
+    background: #333344; color: #a0a0b8; text-transform: uppercase; flex: none; }
+  .kind-md { background: #1f3a5c; color: #9fd0ff; }
+  .kind-html { background: #5c2a1f; color: #ffb59f; }
+  .kind-txt { background: #3a3a2a; color: #e6e0a0; }
+  .kind-file { background: #2a3a2a; color: #a8e6a8; }
+  #status { min-height: 18px; font-size: 12px; margin-top: 6px; }
+  details summary { cursor: pointer; list-style: none; }
+  details summary::before { content: '▸ '; } details[open] summary::before { content: '▾ '; }
 
   /* drop anywhere: the overlay covers the reader iframe too, so drops land on it */
   #drop-overlay { display: none; position: fixed; inset: 10px; z-index: 50;
@@ -84,38 +111,19 @@
     color: #cfe3f7; font-size: 18px; align-items: center; justify-content: center;
     pointer-events: none; }
   body.dropping #drop-overlay { display: flex; pointer-events: auto; }
-
-  /* import center (left pane) */
-  .center-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
-  .dropzone { border: 2px dashed #4a4f5a; border-radius: 10px; padding: 22px 12px; text-align: center;
-    color: #c8c8dc; cursor: pointer; background: #23232c; }
-  .dropzone:hover { border-color: #7fb4e8; background: #26293a; }
-  button.sm { padding: 3px 8px; font-size: 11px; }
-  .tree h3 .empty { font-weight: normal; letter-spacing: 0; text-transform: none; color: #55556a; }
-  dt { color: #8888a0; font-size: 11px; text-transform: uppercase; }
 </style></head>
 <body hx-headers='{"X-Requested-With":"htmx"}'>
   <div class="tree">
     <input name="q" placeholder="Search library…" hx-get="/tree"
-      hx-target="#tree-inner" hx-trigger="keyup changed delay:250ms">
+      hx-target="#tree-inner" hx-trigger="keyup changed delay:250ms, search">
     <div id="tree-inner">{{ tree|safe }}</div>
     <div class="treefoot">
-      <dt style="margin:0 0 2px">Area — for new notes and imports</dt>
-      {% include "areapicker.html" %}
-      <form hx-post="/new" hx-target="#side-panel" hx-include="#area-picker">
-        <input name="title" placeholder="New note title…" required>
-        <button style="width:100%">+ New note</button>
+      <form hx-post="/items" hx-target="#side-panel" hx-on::after-request="this.querySelector('[name=title]').value=''">
+        <input name="title" placeholder="New item title…" required>
+        <dt style="margin:0 0 2px">Area</dt>
+        {% include "areapicker.html" %}
+        <button style="width:100%">+ New item</button>
       </form>
-      <form id="upload-form" hx-post="/upload" hx-encoding="multipart/form-data"
-            hx-trigger="change" hx-target="#side-panel" hx-include="#area-picker"
-            hx-on::after-request="this.reset()">
-        <input id="upload-input" type="file" name="files" multiple hidden>
-        <button type="button" class="ghost" style="width:100%"
-          onclick="document.getElementById('upload-input').click()">⇪ Import files…</button>
-      </form>
-      <div id="upload-status" class="muted"></div>
-      <span class="muted" style="cursor:pointer;font-size:11px" hx-get="/import-center"
-        hx-target="#tree-inner">import center · scan sources…</span>
     </div>
   </div>
   <div class="center">
@@ -123,12 +131,12 @@
     <iframe id="reader" src="about:blank" style="display:none"></iframe>
     <div id="reader-empty" class="empty">← pick a document</div>
   </div>
-  <div id="drop-overlay">Drop files to import into <b id="drop-area" style="margin-left:6px"></b></div>
+  <div id="drop-overlay"><span id="drop-label"></span></div>
   <div class="panel" id="side-panel">
-    <div class="inner muted">library · {{ item_count }} items ·
-      <span title="~/learning-library">git-backed</span></div>
+    <div class="inner muted">library · {{ item_count }} items · pick one, or make one below the tree.</div>
   </div>
 <script>
+window.OPEN_ITEM = null;
 function loadDoc(url) {
   const f = document.getElementById('reader');
   f.src = url; f.style.display = 'block';
@@ -139,11 +147,41 @@ function clearDoc() {
   f.src = 'about:blank'; f.style.display = 'none';
   document.getElementById('reader-empty').style.display = 'flex';
 }
+function refreshPanel(itemId) { htmx.ajax('GET', '/panel/' + itemId, '#side-panel'); }
+function batchMsg(j) {
+  if (j.error) return '⚠ ' + j.error;
+  return j.errors.length ? '⚠ ' + j.errors.join('; ') : '✓ Added ' + j.documents.length;
+}
+
+// --- upload into an item: the ⇪ icon, the list drop target and drop-anywhere share this
+async function uploadFiles(itemId, fileList) {
+  if (!fileList.length) return;
+  const fd = new FormData();
+  for (const f of fileList) fd.append('files', f);
+  const st = document.getElementById('status'); if (st) st.textContent = '⏳ uploading ' + fileList.length + '…';
+  const r = await fetch('/api/items/' + itemId + '/documents', { method: 'POST', body: fd });
+  const j = await r.json();
+  htmx.ajax('GET', '/open/' + itemId + '?msg=' + encodeURIComponent(batchMsg(j)), '#side-panel');
+}
+async function uploadAsNewItem(fileList) {
+  const fd = new FormData();
+  for (const f of fileList) fd.append('files', f);
+  fd.append('area', document.getElementById('area-select').value);
+  fd.append('new_area', document.getElementById('new-area-name').value);
+  const r = await fetch('/api/items/from-files', { method: 'POST', body: fd });
+  const j = await r.json();
+  htmx.ajax('GET', '/open/' + j.item_id + '?msg=' + encodeURIComponent(batchMsg(j)), '#side-panel');
+}
+function wireDrop(el, itemId) {
+  el.addEventListener('dragover', e => { e.preventDefault(); e.stopPropagation(); el.classList.add('over'); });
+  el.addEventListener('dragleave', () => el.classList.remove('over'));
+  el.addEventListener('drop', e => { e.preventDefault(); e.stopPropagation(); el.classList.remove('over');
+    dragDepth = 0; dropping(false); uploadFiles(itemId, e.dataTransfer.files); });
+}
 
 // --- the shared area picker: "＋ new area…" reveals a name field
 function currentArea() {
   const sel = document.getElementById('area-select');
-  if (!sel) return 'misc';
   if (sel.value === '__new__') return document.getElementById('new-area-name').value || 'new area';
   return sel.value;
 }
@@ -151,18 +189,14 @@ function areaChanged(sel) {
   const inp = document.getElementById('new-area-name');
   inp.hidden = sel.value !== '__new__';
   if (!inp.hidden) inp.focus();
-  syncTargetArea();
 }
-function syncTargetArea() {
-  const t = document.getElementById('target-area'); if (t) t.textContent = currentArea();
-}
-document.addEventListener('input', e => { if (e.target.id === 'new-area-name') syncTargetArea(); });
 
-// --- drop anywhere → same HTMX upload form as the ⇪ Import files… picker
+// --- drop anywhere → the open item, or a new item in the picker's area
 let dragDepth = 0;
 function dropping(on) {
   document.body.classList.toggle('dropping', on);
-  if (on) document.getElementById('drop-area').textContent = currentArea();
+  if (on) document.getElementById('drop-label').textContent = window.OPEN_ITEM
+    ? 'Drop files to add them to the open item' : 'Drop files to make a new item in ' + currentArea();
 }
 window.addEventListener('dragenter', e => {
   if (!e.dataTransfer || ![...e.dataTransfer.types].includes('Files')) return;
@@ -173,9 +207,8 @@ window.addEventListener('dragleave', e => { if (--dragDepth <= 0) { dragDepth = 
 window.addEventListener('drop', e => {
   if (!document.body.classList.contains('dropping')) return;
   e.preventDefault(); dragDepth = 0; dropping(false);
-  const input = document.getElementById('upload-input');
-  input.files = e.dataTransfer.files;
-  input.dispatchEvent(new Event('change', { bubbles: true }));
+  if (window.OPEN_ITEM) uploadFiles(window.OPEN_ITEM, e.dataTransfer.files);
+  else uploadAsNewItem(e.dataTransfer.files);
 });
 </script>
 </body></html>

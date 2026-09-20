@@ -1,102 +1,111 @@
-"""library — Workbench over ~/learning-library with Claude-in-the-loop editing.
+"""library — Workbench over a documents store with Claude-in-the-loop editing.
 
-Run: ./run.sh → http://127.0.0.1:8900 · Rebuild the DB: ./run.sh rebuild
-Spec: plan.md. Serve by ID never by path; containment-checked item files;
-HTML byte-for-byte untouched; git is the undo store.
+Run: ./run.sh → http://127.0.0.1:8900 · Backup: ./run.sh export [root]
+Spec: plan.md (v2). SQLite is the source of truth (ADR 0002); serve by id,
+never by path; HTML is never inlined (sandboxed iframe + CSP on the raw
+endpoint); Versions are the undo store; Claude edits go through a scratch dir.
 """
 import html
-import mimetypes
+import re
 import sys
-import urllib.parse
 from pathlib import Path
 
-import markdown as md_lib
 import uvicorn
-from fastapi import FastAPI, File, Form, UploadFile
-from fastapi.responses import HTMLResponse, Response
+from fastapi import FastAPI, File, Form, Request, UploadFile
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from jinja2 import Environment, FileSystemLoader
 
 import claude_runner as cr
-import db as dbm
-import gitops
-import importer
-import libfs
-from config import AREAS, HOST, ITEMS, PORT
+import documents as docs
+from config import EXPORT_DIR, HOST, PORT
 
 env = Environment(loader=FileSystemLoader(Path(__file__).parent / "templates"),
                   autoescape=True)
 
-libfs.first_run_init()
-conn = dbm.connect()
+docs.first_run_init()
+cr.clean_scratch()
+conn = docs.connect()
 app = FastAPI()
 
 OPEN_ID: str | None = None  # workbench state: which item is open
 
 
 # ---------------------------------------------------------------- helpers
-def areas() -> list[str]:
-    return dbm.all_areas(conn, AREAS)
+def fmt_size(n: int) -> str:
+    n = n or 0
+    return f"{n} B" if n < 1024 else f"{n/1024:.1f} KB" if n < 2**20 else f"{n/2**20:.1f} MB"
+
+
+env.filters["size"] = fmt_size
 
 
 def resolve_area(area: str, new_area: str = "") -> str:
     """The shared area picker: an existing name, or "__new__" + a typed name."""
     if area == "__new__":
-        return dbm.add_area(conn, new_area) or "misc"
+        return docs.add_area(conn, new_area) or "misc"
     return area or "misc"
 
 
-def items_by_area(rows, show_empty: bool = False):
-    groups = []
-    for a in areas():
-        sub = [r for r in rows if r["area"] == a]
-        if sub or show_empty:
-            # static ordering — items don't jump to the top when opened
-            # (last_opened is still recorded in the DB, just not used here)
-            groups.append((a, sorted(sub, key=lambda r: r["title"].lower())))
-    return groups
-
-
 def tree_html(q: str = "") -> str:
+    items = docs.list_items(conn)
+    counts = dict(conn.execute("SELECT item_id, count(*) FROM documents GROUP BY item_id"))
+    hits: dict[str, dict] = {}
     if q.strip():
-        hits = dbm.fts_search(conn, q.strip())
-        rows = []
-        for h in hits:
-            it = conn.execute("SELECT * FROM items WHERE id=?",
-                              (h["item_id"],)).fetchone()
-            if it:
-                rows.append({**dict(it), "snip": h["snip"]})
-    else:
-        rows = [dict(r) for r in conn.execute("SELECT * FROM items")]
+        hits = dict(docs.search(conn, q))
+        order = {iid: i for i, iid in enumerate(hits)}
+        items = sorted((it for it in items if it["id"] in hits), key=lambda it: order[it["id"]])
+    groups = []
+    for a in docs.all_areas(conn):
+        sub = [it for it in items if it["area"] == a]
+        if sub or not q.strip():
+            groups.append((a, sub))
     return env.get_template("tree.html").render(
-        groups=items_by_area(rows, show_empty=not q.strip()), q=q, open_id=OPEN_ID,
-        pending_id=cr.RUN.get("item_id") if cr.RUN["status"] != "idle" else None)
+        groups=groups, counts=counts, hits=hits, q=q, open_id=OPEN_ID,
+        pending_id=cr.pending_item())
 
 
-def view_url(it, r) -> str:
-    rel = urllib.parse.quote(r["relpath"])
-    if r["relpath"].endswith(".md"):
-        return f"/render/{it['id']}/{rel}"
-    return f"/files/{it['id']}/{rel}"
+def oob_tree() -> str:
+    return f'<div id="tree-inner" hx-swap-oob="true">{tree_html()}</div>'
 
 
-def panel_html(item_id: str, tab: str = "info") -> str:
-    it = conn.execute("SELECT * FROM items WHERE id=?", (item_id,)).fetchone()
+def area_picker_oob() -> str:
+    return env.get_template("areapicker.html").render(areas=docs.all_areas(conn), oob=True)
+
+
+def panel_html(item_id: str, tab: str = "info", msg: str = "") -> str:
+    it = docs.get_item(conn, item_id)
     if not it:
-        return "<div class=inner>gone</div>"
-    rends = conn.execute(
-        "SELECT * FROM renditions WHERE item_id=? ORDER BY role='entry' DESC,"
-        " relpath", (item_id,)).fetchall()
-    picker = "".join(
-        f'<option value="{html.escape(r["relpath"])}">{html.escape(r["relpath"])}'
-        "</option>" for r in rends)
-    target_picker = (f'<select name="relpath">{picker}</select>'
-                     if len(rends) > 1 else
-                     f'<input type="hidden" name="relpath" '
-                     f'value="{html.escape(rends[0]["relpath"])}">' if rends else "")
+        return '<div class="inner muted">gone</div><script>window.OPEN_ITEM=null</script>'
+    dlist = docs.list_for_item(conn, item_id)
     return env.get_template("panel.html").render(
-        it=it, tab=tab, rends=rends, meta=libfs.read_meta(ITEMS / it["dir"]),
-        tags=dbm.tags_of(conn, item_id), view_url=view_url, areas=areas(),
-        busy=cr.RUN["status"] != "idle", target_picker=target_picker)
+        it=it, docs=dlist, tab=tab, entry=docs.entry_for(conn, it), msg=msg,
+        tags=docs.tags_of(conn, item_id), areas=docs.all_areas(conn),
+        text_docs=[d for d in dlist if d["editable"]],
+        busy=cr.RUN["status"] != "idle")
+
+
+def entry_script(item_id: str, doc_id: str = "", edit: bool = False) -> str:
+    """After a mutation: load the entry (or the doc given), or the placeholder."""
+    if doc_id:
+        return f"<script>loadDoc('/documents/{doc_id}{'?edit=1' if edit else ''}')</script>"
+    it = docs.get_item(conn, item_id)
+    e = docs.entry_for(conn, it) if it else None
+    return (f"<script>loadDoc('/documents/{e['id']}')</script>" if e
+            else "<script>clearDoc()</script>")
+
+
+def open_html(item_id: str, doc_id: str = "", msg: str = "") -> str | None:
+    """Panel + reader load + tree; bumps last_opened. None when the item is gone."""
+    global OPEN_ID
+    if not docs.get_item(conn, item_id):
+        return None
+    OPEN_ID = item_id
+    docs.open_item(conn, item_id)
+    return panel_html(item_id, msg=msg) + entry_script(item_id, doc_id) + oob_tree()
+
+
+def pending_on(item_id: str) -> bool:
+    return cr.pending_item() == item_id
 
 
 def diff_as_html() -> str:
@@ -111,12 +120,15 @@ def diff_as_html() -> str:
 
 def stage_html(reload_doc: bool = False) -> str:
     return env.get_template("stage.html").render(
-        run=cr.RUN, diff_html=diff_as_html() if cr.RUN["status"] == "diff"
-        else "", reload_doc=reload_doc)
+        run=cr.RUN, diff_html=diff_as_html() if cr.RUN["status"] == "diff" else "",
+        reload_doc=reload_doc)
 
 
-def oob_tree() -> str:
-    return f'<div id="tree-inner" hx-swap-oob="true">{tree_html()}</div>'
+def guard(fn):
+    try:
+        return JSONResponse(fn())
+    except docs.DomainError as e:
+        return JSONResponse({"ok": False, "error": str(e)}, e.status)
 
 
 # ---------------------------------------------------------------- pages
@@ -128,9 +140,8 @@ def healthz():
 
 @app.get("/", response_class=HTMLResponse)
 def workbench():
-    libfs.sweep(conn)  # opportunistic — out-of-band edits never leave FTS stale
     return env.get_template("layout.html").render(
-        tree=tree_html(), stage=stage_html(), areas=areas(),
+        tree=tree_html(), stage=stage_html(), areas=docs.all_areas(conn),
         item_count=conn.execute("SELECT count(*) FROM items").fetchone()[0])
 
 
@@ -139,241 +150,204 @@ def tree(q: str = ""):
     return tree_html(q)
 
 
-def open_html(item_id: str) -> str | None:
-    """Panel for the item + a script loading its entry rendition + the tree;
-    bumps last_opened. None when the item is gone."""
-    global OPEN_ID
-    it = conn.execute("SELECT * FROM items WHERE id=?", (item_id,)).fetchone()
-    if not it:
-        return None
-    OPEN_ID = item_id
-    conn.execute("UPDATE items SET last_opened=? WHERE id=?",
-                 (libfs.now(), item_id))
-    conn.commit()
-    entry = conn.execute(
-        "SELECT * FROM renditions WHERE item_id=? ORDER BY role='entry' DESC",
-        (item_id,)).fetchone()
-    script = f"<script>loadDoc('{view_url(it, entry)}')</script>" if entry else ""
-    return panel_html(item_id) + script + oob_tree()
-
-
 @app.get("/open/{item_id}", response_class=HTMLResponse)
-def open_item(item_id: str):
-    out = open_html(item_id)
+def open_item(item_id: str, doc: str = "", msg: str = ""):
+    out = open_html(item_id, doc, msg)
     return out if out is not None else HTMLResponse("gone", 404)
 
 
 @app.get("/panel/{item_id}", response_class=HTMLResponse)
-def panel(item_id: str, tab: str = "info"):
-    return panel_html(item_id, tab)
+def panel(item_id: str, tab: str = "info", msg: str = ""):
+    return panel_html(item_id, tab, msg)
 
 
-# ---------------------------------------------------------------- serving
-@app.get("/files/{item_id}/{rel:path}")
-def files(item_id: str, rel: str):
-    """Serve by ID, containment-checked, bytes untouched (plan: Serving)."""
-    it = conn.execute("SELECT * FROM items WHERE id=?", (item_id,)).fetchone()
-    if not it:
-        return Response("unknown item", 404)
-    root = (ITEMS / it["dir"]).resolve()
-    target = (root / rel).resolve()
-    if not target.is_relative_to(root) or not target.is_file():
-        return Response("out of bounds", 403)
-    ctype = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
-    return Response(target.read_bytes(), media_type=ctype)
+# ---------------------------------------------------------------- items
+@app.post("/items", response_class=HTMLResponse)
+def new_item(title: str = Form(...), area: str = Form("misc"), new_area: str = Form("")):
+    try:
+        iid = docs.create_item(conn, title, resolve_area(area, new_area))
+    except docs.DomainError as e:
+        return HTMLResponse(f'<div class="inner warn">⚠ {html.escape(str(e))}</div>')
+    return (open_html(iid) or "") + area_picker_oob()
 
 
-@app.get("/render/{item_id}/{rel:path}", response_class=HTMLResponse)
-def render_md(item_id: str, rel: str):
-    raw = files(item_id, rel)
-    if raw.status_code != 200:
-        return raw
-    text = raw.body.decode(errors="replace")
-    if text.startswith("---"):  # hide frontmatter from the rendered page
-        try:
-            text = text[text.index("\n---", 3) + 4:]
-        except ValueError:
-            pass
-    body = md_lib.markdown(text, extensions=["fenced_code", "tables"])
-    return HTMLResponse(env.get_template("mdpage.html").render(body=body))
-
-
-@app.get("/peek/{cid}")
-def peek(cid: str):
-    """Read a scan candidate before importing. Path comes from the server-side
-    candidate cache, never from the request."""
-    c = importer.CANDIDATES.get(cid)
-    if not c:
-        return Response("stale scan — reopen the review panel", 404)
-    p = Path(c["paths"][0])
-    if c["kind"] == "bundle":
-        p = p / "MISSION.md"
-    if p.suffix == ".md":
-        body = md_lib.markdown(p.read_text(errors="replace"),
-                               extensions=["fenced_code", "tables"])
-        return HTMLResponse(env.get_template("mdpage.html").render(body=body))
-    return Response(p.read_bytes(), media_type="text/html")
-
-
-# ---------------------------------------------------------------- import
-def center_html() -> str:
-    """The import center: drop target + chooser + scanned sources. Rendered
-    into the left pane (#tree-inner) in place of the tree."""
-    cands = importer.scan(conn)
-    return env.get_template("import.html").render(
-        cands=cands, new_count=sum(1 for c in cands if c["status"] == "new"),
-        item_count=conn.execute("SELECT count(*) FROM items").fetchone()[0])
-
-
-def area_picker_oob() -> str:
-    return env.get_template("areapicker.html").render(areas=areas(), oob=True)
-
-
-@app.get("/import-center", response_class=HTMLResponse)
-def import_center():
-    return center_html()
-
-
-@app.post("/import/{cid}", response_class=HTMLResponse)
-def do_import(cid: str):
-    importer.do_import(conn, cid)
-    return center_html()
-
-
-@app.post("/delete/{item_id}", response_class=HTMLResponse)
+@app.post("/items/{item_id}/delete", response_class=HTMLResponse)
 def delete_item(item_id: str):
     global OPEN_ID
-    it = conn.execute("SELECT * FROM items WHERE id=?", (item_id,)).fetchone()
+    it = docs.get_item(conn, item_id)
     if not it:
         return HTMLResponse("gone", 404)
-    if cr.RUN["status"] != "idle" and cr.RUN.get("item_id") == item_id:
+    if pending_on(item_id):
         return HTMLResponse('<div class="inner warn">⚠ resolve the pending Claude edit first</div>')
-    libfs.delete_item(conn, it)
+    n = docs.delete_item(conn, item_id)
     OPEN_ID = None
-    return (f'<div class="inner muted">🗑 deleted “{html.escape(it["title"])}” — '
-            f'git history in ~/learning-library still has it</div>'
-            "<script>clearDoc()</script>" + oob_tree() + area_picker_oob())
+    return (f'<div class="inner muted">🗑 deleted “{html.escape(it["title"])}” and '
+            f'{n} document(s)</div><script>clearDoc(); window.OPEN_ITEM=null</script>'
+            + oob_tree() + area_picker_oob())
 
 
-@app.post("/delete-file/{item_id}", response_class=HTMLResponse)
-def delete_file(item_id: str, relpath: str = Form(...)):
-    global OPEN_ID
-    it = conn.execute("SELECT * FROM items WHERE id=?", (item_id,)).fetchone()
-    if not it:
-        return HTMLResponse("gone", 404)
-    if cr.RUN["status"] != "idle" and cr.RUN.get("item_id") == item_id:
-        return HTMLResponse('<div class="inner warn">⚠ resolve the pending Claude edit first</div>')
-    if libfs.delete_file(conn, it, relpath):
-        OPEN_ID = None
-        return (f'<div class="inner muted">🗑 “{html.escape(it["title"])}” had no files left and was removed</div>'
-                "<script>clearDoc()</script>" + oob_tree())
-    return (open_html(item_id) or "")
+@app.post("/items/{item_id}/tags", response_class=HTMLResponse)
+def save_tags(item_id: str, tags: str = Form("")):
+    docs.set_tags(conn, item_id, [t.strip() for t in tags.split(",") if t.strip()])
+    return panel_html(item_id) + oob_tree()
+
+
+@app.post("/items/{item_id}/area", response_class=HTMLResponse)
+def move_area(item_id: str, area: str = Form(...), new_area: str = Form("")):
+    docs.set_area(conn, item_id, resolve_area(area, new_area))
+    return panel_html(item_id) + oob_tree() + area_picker_oob()
+
+
+@app.post("/items/{item_id}/pin/{doc_id}", response_class=HTMLResponse)
+def pin_entry(item_id: str, doc_id: str):
+    docs.set_entry(conn, item_id, doc_id)
+    return panel_html(item_id) + entry_script(item_id)
+
+
+@app.post("/items/{item_id}/notes", response_class=HTMLResponse)
+def new_note(item_id: str, name: str = Form("")):
+    if pending_on(item_id):
+        return panel_html(item_id, msg="⚠ resolve the pending Claude edit first")
+    d = docs.add_note(conn, item_id, name)
+    return panel_html(item_id) + entry_script(item_id, d["id"], edit=True) + oob_tree()
 
 
 @app.post("/areas", response_class=HTMLResponse)
 def new_area(name: str = Form(...)):
-    """Name a new (empty) area; it shows in the tree and every area picker."""
-    dbm.add_area(conn, name)
+    docs.add_area(conn, name)
     return tree_html() + area_picker_oob()
 
 
-@app.post("/area/{item_id}", response_class=HTMLResponse)
-def move_area(item_id: str, area: str = Form(...), new_area: str = Form("")):
-    it = conn.execute("SELECT * FROM items WHERE id=?", (item_id,)).fetchone()
-    if not it:
-        return HTMLResponse("gone", 404)
-    libfs.set_area(conn, it, resolve_area(area, new_area))
-    return panel_html(item_id) + oob_tree() + area_picker_oob()
+# ---------------------------------------------------------------- documents (panel)
+@app.post("/documents/{doc_id}/rename", response_class=HTMLResponse)
+def rename(doc_id: str, name: str = Form("")):
+    d = docs.get(conn, doc_id)
+    if pending_on(d["item_id"]):
+        return panel_html(d["item_id"], msg="⚠ resolve the pending Claude edit first")
+    try:
+        docs.update(conn, doc_id, {"name": name})
+    except docs.DomainError as e:
+        return panel_html(d["item_id"], msg=f"⚠ {e}")
+    return panel_html(d["item_id"]) + entry_script(d["item_id"], doc_id) + oob_tree()
 
 
-@app.post("/upload", response_class=HTMLResponse)
-def upload(files: list[UploadFile] = File(...), area: str = Form("misc"),
-           new_area: str = Form("")):
-    """Files dropped on the Workbench or chosen with ⇪ Import files…
-    Opens the last item created; the status line reports the batch."""
-    area = resolve_area(area, new_area)
-    ids, errors = libfs.create_from_uploads(
-        conn, [(f.filename or "", f.file.read()) for f in files], area)
-    msg = f"✓ Added {len(ids)} item(s)" if ids else "∅ nothing added"
-    if errors:
-        msg += " · ⚠ " + "; ".join(html.escape(e) for e in errors)
-    status = (f'<div id="upload-status" class="muted" hx-swap-oob="true">'
-              f"{msg}</div>")
-    if not ids:
-        return status  # target untouched; the oob status still swaps
-    return (open_html(ids[-1]) or "") + status + area_picker_oob()
+@app.post("/documents/{doc_id}/delete", response_class=HTMLResponse)
+def delete_doc(doc_id: str):
+    d = docs.get(conn, doc_id)
+    if pending_on(d["item_id"]):
+        return panel_html(d["item_id"], msg="⚠ resolve the pending Claude edit first")
+    docs.delete(conn, doc_id)
+    return panel_html(d["item_id"]) + entry_script(d["item_id"]) + oob_tree()
 
 
-@app.post("/import-all", response_class=HTMLResponse)
-def import_all():
-    for c in list(importer.CANDIDATES.values()):
-        if c["status"] == "new":
-            importer.do_import(conn, c["cid"])
-    return center_html()
+@app.get("/documents/{doc_id}", response_class=HTMLResponse)
+def document_page(doc_id: str, edit: int = 0, history: int = 0):
+    try:
+        ctx = docs.page_context(docs.get(conn, doc_id))
+    except docs.DomainError as e:
+        return HTMLResponse(f"<h3>{html.escape(str(e))}</h3>", e.status)
+    return env.get_template("docpage.html").render(
+        **ctx, edit=bool(edit and ctx["editable"]),
+        history=bool(history and ctx["editable"]))
 
 
-# ---------------------------------------------------------------- editing
-@app.get("/editform/{item_id}", response_class=HTMLResponse)
-def editform(item_id: str, relpath: str):
-    it = conn.execute("SELECT * FROM items WHERE id=?", (item_id,)).fetchone()
-    raw = files(item_id, relpath)
-    if not it or raw.status_code != 200:
-        return HTMLResponse("gone", 404)
-    return env.get_template("editform.html").render(
-        it=it, relpath=relpath, text=raw.body.decode(errors="replace"))
+# ---------------------------------------------------------------- JSON / bytes API
+def _upload_batch(item_id: str, files: list[UploadFile]) -> dict:
+    out, errors = [], []
+    for f in files:  # per-file try/except — one bad file never fails the batch
+        try:
+            out.append(docs.add_upload(conn, item_id, f.filename, f.content_type, f.file.read()))
+        except docs.DomainError as e:
+            errors.append(f"{f.filename}: {e}")
+    return {"ok": not errors, "documents": out, "errors": errors}
 
 
-@app.post("/edit/{item_id}", response_class=HTMLResponse)
-def save_edit(item_id: str, relpath: str = Form(...), text: str = Form("")):
-    it = conn.execute("SELECT * FROM items WHERE id=?", (item_id,)).fetchone()
-    root = (ITEMS / it["dir"]).resolve()
-    target = (root / relpath).resolve()
-    if not target.is_relative_to(root):
-        return HTMLResponse("out of bounds", 403)
-    target.write_text(text)
-    libfs.refresh_item(conn, it)  # updated_at + FTS row
-    gitops.commit_all(f"edit: {it['dir']}/{relpath}")
-    rel = urllib.parse.quote(relpath)
-    return (panel_html(item_id) + oob_tree()
-            + f"<script>loadDoc('/render/{item_id}/{rel}?ts={libfs.now()}')</script>")
+@app.post("/api/items/{item_id}/documents")
+def upload(item_id: str, files: list[UploadFile] = File(...)):
+    if not docs.get_item(conn, item_id):
+        return JSONResponse({"ok": False, "error": "item not found"}, 404)
+    if pending_on(item_id):
+        return JSONResponse({"ok": False, "error": "resolve the pending Claude edit first"}, 409)
+    return JSONResponse(_upload_batch(item_id, files))
 
 
-@app.post("/new", response_class=HTMLResponse)
-def new_note(title: str = Form(...), area: str = Form("misc"), new_area: str = Form("")):
-    global OPEN_ID
-    iid = libfs.create_note(conn, title, resolve_area(area, new_area))
-    OPEN_ID = iid
-    return (panel_html(iid) + oob_tree() + area_picker_oob()
-            + f"<script>loadDoc('/render/{iid}/note.md')</script>")
+@app.post("/api/items/from-files")
+def item_from_files(files: list[UploadFile] = File(...), area: str = Form("misc"),
+                    new_area: str = Form("")):
+    """Files dropped on the Workbench with no item open: a new item titled
+    after the first file, holding the batch."""
+    title = Path(files[0].filename or "Untitled").stem if files else "Untitled"
+    iid = docs.create_item(conn, title or "Untitled", resolve_area(area, new_area))
+    return JSONResponse({**_upload_batch(iid, files), "item_id": iid})
 
 
-@app.post("/tags/{item_id}", response_class=HTMLResponse)
-def save_tags(item_id: str, tags: str = Form("")):
-    it = conn.execute("SELECT * FROM items WHERE id=?", (item_id,)).fetchone()
-    names = [t.strip() for t in tags.split(",") if t.strip()]
-    meta = libfs.read_meta(ITEMS / it["dir"])
-    meta["tags"] = names
-    libfs.write_meta(ITEMS / it["dir"], meta)
-    dbm.set_tags(conn, item_id, names)
-    gitops.commit_all(f"edit: tags of {it['dir']}")
-    return panel_html(item_id)
+@app.post("/api/documents/render")
+async def render_preview(request: Request):
+    body = (await request.json()).get("body", "")
+    return {"html": docs.render_markdown(body)}
+
+
+@app.post("/api/documents/{doc_id}")
+async def update_doc(doc_id: str, request: Request):
+    updates = (await request.json()).get("updates", {})
+    d = docs.get(conn, doc_id)
+    if "body" in updates and pending_on(d["item_id"]):
+        return JSONResponse({"ok": False, "error": "resolve the pending Claude edit first"}, 409)
+    return guard(lambda: (docs.update(conn, doc_id, updates), {"ok": True})[1])
+
+
+@app.get("/api/documents/{doc_id}/raw")
+def raw(doc_id: str, download: int = 0):
+    try:
+        data, ct, name = docs.raw(conn, doc_id)
+    except docs.DomainError as e:
+        return Response(str(e), e.status)
+    safe = re.sub(r"[^A-Za-z0-9._-]", "_", name)
+    return Response(data, media_type=ct, headers={
+        "Content-Disposition": f'{"attachment" if download else "inline"}; filename="{safe}"',
+        "Content-Security-Policy": "sandbox allow-scripts allow-forms allow-popups",
+        "X-Content-Type-Options": "nosniff"})
+
+
+@app.get("/api/documents/{doc_id}/versions")
+def list_versions(doc_id: str):
+    return guard(lambda: {"ok": True, "versions": docs.versions(conn, doc_id)})
+
+
+@app.get("/api/documents/{doc_id}/versions/{version_id}")
+def get_version(doc_id: str, version_id: str):
+    def one():
+        v = docs.get_version(conn, doc_id, version_id)
+        return {"ok": True, "version": v,
+                "html": docs.render_markdown(v["body"]) if v["kind"] == "md"
+                else docs.render_text(v["body"]) if v["kind"] == "txt" else ""}
+    return guard(one)
+
+
+@app.post("/api/documents/{doc_id}/versions/{version_id}/restore")
+def restore_version(doc_id: str, version_id: str):
+    d = docs.get(conn, doc_id)
+    if pending_on(d["item_id"]):
+        return JSONResponse({"ok": False, "error": "resolve the pending Claude edit first"}, 409)
+    return guard(lambda: (docs.restore(conn, doc_id, version_id), {"ok": True})[1])
 
 
 # ---------------------------------------------------------------- claude
 @app.post("/claude/run", response_class=HTMLResponse)
 def claude_run(item_id: str = Form(...), feature: str = Form(...),
-               relpath: str = Form(...), term: str = Form(""),
-               body: str = Form(""), cap: str = Form(""),
-               prompt: str = Form("")):
-    it = conn.execute("SELECT * FROM items WHERE id=?", (item_id,)).fetchone()
-    if not it:
+               doc_id: str = Form(...), term: str = Form(""),
+               body: str = Form(""), cap: str = Form(""), prompt: str = Form("")):
+    it = docs.get_item(conn, item_id)
+    try:
+        d = docs.get(conn, doc_id)
+    except docs.DomainError:
+        d = None
+    if not it or not d or d["item_id"] != item_id:
         return HTMLResponse("gone", 404)
-    err = cr.start(dict(it), relpath, feature,
-                   {"term": term, "body": body, "cap": cap, "prompt": prompt})
+    err = cr.start(conn, it, d, feature, {"term": term, "body": body, "cap": cap, "prompt": prompt})
     if err:
-        return HTMLResponse(
-            f'<div id="stage"><div class="runbar err">🚫 {html.escape(err)}'
-            "</div></div>")
+        return HTMLResponse(f'<div id="stage"><div class="runbar err">🚫 {html.escape(err)}'
+                            "</div></div>")
     return stage_html() + oob_tree()
 
 
@@ -384,8 +358,12 @@ def claude_stage():
 
 @app.post("/claude/accept", response_class=HTMLResponse)
 def claude_accept():
-    cr.accept(conn)
-    return stage_html(reload_doc=True) + oob_tree()
+    item_id = cr.RUN.get("item_id")
+    err = cr.accept(conn)
+    out = stage_html(reload_doc=not err) + oob_tree()
+    if not err and item_id:
+        out += f'<div id="side-panel" hx-swap-oob="true">{panel_html(item_id)}</div>'
+    return out
 
 
 @app.post("/claude/revert", response_class=HTMLResponse)
@@ -402,9 +380,12 @@ def claude_dismiss():
 
 # ---------------------------------------------------------------- main
 if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] == "rebuild":
-        conn.close()
-        print(f"rebuilt library.db: {libfs.rebuild()} items")
+    if len(sys.argv) > 1 and sys.argv[1] == "export":
+        import export
+        root = Path(sys.argv[2]).expanduser() if len(sys.argv) > 2 else EXPORT_DIR
+        r = export.run(conn, root)
+        print(f"exported {r['items']} items / {r['documents']} documents → {r['root']}"
+              f" (pruned {r['pruned']} stale file(s); library.db copied)")
         sys.exit(0)
     print(f"library → http://{HOST}:{PORT}")
     uvicorn.run(app, host=HOST, port=PORT)

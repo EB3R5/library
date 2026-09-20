@@ -6,7 +6,7 @@ __pycache__/
 ._*
 .python-version
 docs/
-prototype_documents/
+tests/
 packaging/desktop/
 CONTEXT.md
 plan.md

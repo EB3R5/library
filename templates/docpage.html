@@ -7,6 +7,7 @@
     border-bottom: 1px solid #e4e1dc; background: #faf9f7; font-size: 13px; flex: none; }
   .head .name { font-weight: 600; }
   .head .sp { flex: 1; }
+  .head .msg { color: #b03030; font-size: 12px; }
   .kind { font: 10px/1 ui-monospace, monospace; padding: 3px 5px; border-radius: 4px;
     background: #e8e6e1; color: #555; text-transform: uppercase; }
   .head a, .head button { font-size: 12px; color: #2a5db0; background: none; border: 1px solid #cfd6e4;
@@ -14,11 +15,12 @@
   .head button:disabled { color: #aaa; border-color: #e4e4e4; cursor: default; }
   .head button.primary { background: #2a5db0; color: #fff; border-color: #2a5db0; }
   .head button.primary:disabled { background: #b9c6dd; border-color: #b9c6dd; color: #fff; }
-  .body { flex: 1; overflow: auto; }
+  .body { flex: 1; overflow: auto; min-height: 0; }
   article { max-width: 760px; margin: 0 auto; padding: 24px; }
   article pre, .doc-plain { background: #f4f2ee; padding: 12px; border-radius: 8px;
     overflow-x: auto; white-space: pre-wrap; font-size: 13px; }
   article code { background: #f4f2ee; padding: 1px 4px; border-radius: 4px; font-size: 13px; }
+  article img { max-width: 100%; }
   article table { border-collapse: collapse; } article td, article th { border: 1px solid #ddd; padding: 5px 10px; }
   .frame { width: 100%; height: 100%; border: 0; }
   .imgwrap { padding: 24px; text-align: center; } .imgwrap img { max-width: 100%; }
@@ -27,6 +29,17 @@
   .editor textarea { border: 0; border-right: 1px solid #e4e1dc; padding: 16px; resize: none;
     font: 13px/1.5 ui-monospace, Menlo, monospace; outline: none; }
   .editor .preview { overflow: auto; }
+  .history { display: grid; grid-template-columns: 300px 1fr; height: 100%; }
+  .vlist { border-right: 1px solid #e4e1dc; overflow: auto; background: #faf9f7; }
+  .vrow { padding: 10px 14px; border-bottom: 1px solid #eee; cursor: pointer; font-size: 12.5px; }
+  .vrow:hover { background: #f0eee9; } .vrow.on { background: #e6ecf7; }
+  .vrow .c { color: #555; } .vrow .t { color: #888; font-size: 11.5px; }
+  .vprev { overflow: auto; display: flex; flex-direction: column; }
+  .vbar { padding: 8px 16px; border-bottom: 1px solid #eee; font-size: 12px; color: #555;
+    display: flex; gap: 10px; align-items: center; }
+  .vbar button { font-size: 12px; border: 1px solid #cfd6e4; background: #2a5db0; color: #fff;
+    border-radius: 5px; padding: 3px 9px; cursor: pointer; }
+  .vbody { flex: 1; overflow: auto; }
   @media print { .head { display: none; } .body { overflow: visible; } }
 </style></head>
 <body>
@@ -34,14 +47,12 @@
   <span class="name">{{ doc.name }}</span>
   <span class="kind">{{ doc.kind }}</span>
   <span id="size" style="color:#888">{{ doc.size }} B</span>
+  <span id="msg" class="msg"></span>
   <span class="sp"></span>
   {% if editable %}
-    {% if edit %}
-      <a href="/documents/{{ doc.id }}">View</a>
-      <button class="primary" id="save" disabled>Save</button>
-    {% else %}
-      <a href="/documents/{{ doc.id }}?edit=1">Edit</a>
-    {% endif %}
+    {% if edit or history %}<a href="/documents/{{ doc.id }}">View</a>{% else %}<a href="/documents/{{ doc.id }}?edit=1">Edit</a>{% endif %}
+    {% if edit %}<button class="primary" id="save" disabled>Save</button>{% endif %}
+    {% if not history %}<a href="/documents/{{ doc.id }}?history=1">History</a>{% endif %}
   {% endif %}
   <a href="{{ raw_url }}?download=1" download>Download</a>
   <button onclick="window.print()">Print</button>
@@ -54,8 +65,16 @@
       {% if doc.kind == 'html' %}
         <iframe id="pv-frame" class="frame" sandbox="allow-scripts allow-forms allow-popups"></iframe>
       {% else %}
-        <article id="pv" class="markdown-body">{{ html|safe }}</article>
+        <article id="pv">{{ html|safe }}</article>
       {% endif %}
+    </div>
+  </div>
+{% elif history %}
+  <div class="history">
+    <div class="vlist" id="vlist"><div class="vrow t">loading…</div></div>
+    <div class="vprev">
+      <div class="vbar" id="vbar"><span class="t">pick a version to preview it</span></div>
+      <div class="vbody" id="vbody"></div>
     </div>
   </div>
 {% elif show == 'iframe' %}
@@ -65,26 +84,31 @@
 {% elif show == 'pdf' %}
   <iframe class="frame" src="{{ raw_url }}"></iframe>
 {% elif show == 'inline' %}
-  <article class="markdown-body">{{ html|safe }}</article>
+  <article>{{ html|safe }}</article>
 {% else %}
   <div class="dl">{{ doc.content_type or 'binary' }} · {{ doc.size }} bytes<br><br>
     <a href="{{ raw_url }}?download=1" download>⇩ Download {{ doc.name }}</a></div>
 {% endif %}
 </div>
 <script>
-window.DOC = {{ {'id': doc.id, 'kind': doc.kind, 'edit': edit}|tojson }};
+window.DOC = {{ {'id': doc.id, 'item_id': doc.item_id, 'kind': doc.kind, 'edit': edit, 'history': history}|tojson }};
+const post = (url, body) => fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(body || {}) }).then(r => r.json());
+const esc = s => s.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const fmt = n => n < 1024 ? n + ' B' : n < 1048576 ? (n/1024).toFixed(1) + ' KB' : (n/1048576).toFixed(1) + ' MB';
+function panel() { if (parent && parent.refreshPanel) parent.refreshPanel(DOC.item_id); }
+
 if (DOC.edit) {
-  const ta = document.getElementById('doc-body'), save = document.getElementById('save');
+  const ta = document.getElementById('doc-body'), save = document.getElementById('save'),
+        msg = document.getElementById('msg');
   let dirty = false, t;
-  const post = (url, body) => fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body) }).then(r => r.json());
   function preview() {
     if (DOC.kind === 'html') { document.getElementById('pv-frame').srcdoc = ta.value; return; }
     if (DOC.kind === 'txt') { document.getElementById('pv').innerHTML =
-      '<pre class="doc-plain">' + ta.value.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])) + '</pre>'; return; }
+      '<pre class="doc-plain">' + esc(ta.value) + '</pre>'; return; }
     post('/api/documents/render', { body: ta.value }).then(j => document.getElementById('pv').innerHTML = j.html);
   }
-  ta.addEventListener('input', () => { dirty = true; save.disabled = false;
+  ta.addEventListener('input', () => { dirty = true; save.disabled = false; msg.textContent = '';
     clearTimeout(t); t = setTimeout(preview, 300); });
   ta.addEventListener('keydown', e => {
     if (e.key === 'Tab') { e.preventDefault(); const s = ta.selectionStart;
@@ -94,15 +118,43 @@ if (DOC.edit) {
   async function doSave() {
     if (!dirty) return;
     const j = await post('/api/documents/' + DOC.id, { updates: { body: ta.value } });
-    if (!j.ok) { alert(j.error); return; }
+    if (!j.ok) { msg.textContent = '⚠ ' + j.error; return; }   // refused: the text stays put
     dirty = false; save.disabled = true;
     document.getElementById('size').textContent = new TextEncoder().encode(ta.value).length + ' B';
-    if (parent && parent.refreshPanel) parent.refreshPanel({{ doc.item_id|tojson }});
+    panel();
   }
   save.addEventListener('click', doSave);
   window.addEventListener('beforeunload', e => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
   if (DOC.kind === 'html') preview();
   ta.focus();
+}
+
+if (DOC.history) {
+  const list = document.getElementById('vlist'), bar = document.getElementById('vbar'),
+        body = document.getElementById('vbody');
+  fetch('/api/documents/' + DOC.id + '/versions').then(r => r.json()).then(j => {
+    if (!j.versions.length) { list.innerHTML = '<div class="vrow t">no versions yet — every save files the previous body here</div>'; return; }
+    list.innerHTML = j.versions.map(v =>
+      '<div class="vrow" data-id="' + v.id + '"><div class="t">' + esc(v.replaced_at.replace('T', ' ')) + ' · ' + fmt(v.size) +
+      '</div><div class="c">' + esc(v.cause) + '</div></div>').join('');
+    list.querySelectorAll('.vrow').forEach(el => el.addEventListener('click', () => show(el)));
+  });
+  async function show(el) {
+    list.querySelectorAll('.vrow').forEach(x => x.classList.remove('on')); el.classList.add('on');
+    const j = await fetch('/api/documents/' + DOC.id + '/versions/' + el.dataset.id).then(r => r.json());
+    if (!j.ok) { bar.textContent = '⚠ ' + j.error; return; }
+    const v = j.version;
+    bar.innerHTML = '<span class="t">' + esc(v.kind) + ' · ' + esc(v.cause) + '</span><span style="flex:1"></span>' +
+      '<button id="restore">Restore this version</button>';
+    if (v.kind === 'html') body.innerHTML = '<iframe class="frame" sandbox="allow-scripts allow-forms allow-popups"></iframe>',
+      body.firstChild.srcdoc = v.body;
+    else body.innerHTML = '<article>' + j.html + '</article>';
+    document.getElementById('restore').addEventListener('click', async () => {
+      const r = await post('/api/documents/' + DOC.id + '/versions/' + v.id + '/restore');
+      if (!r.ok) { bar.textContent = '⚠ ' + r.error; return; }
+      panel(); location.href = '/documents/' + DOC.id + '?history=1';
+    });
+  }
 }
 </script>
 </body></html>

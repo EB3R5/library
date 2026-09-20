@@ -5,9 +5,17 @@
        hx-get="/open/{{ it.id }}" hx-target="#side-panel">
     <span style="flex:1;overflow:hidden;text-overflow:ellipsis">{{ it.title }}</span>
     {% if it.id == pending_id %}<span class="badge pend">pending ✎</span>{% endif %}
-    <span class="badge">{{ it.kind }}</span>
+    <span class="badge">{{ counts.get(it.id, 0) }}</span>
   </div>
-  {% if it.snip %}<div class="snip">…{{ it.snip|safe }}…</div>{% endif %}
+  {% set g = hits.get(it.id) %}
+  {% if g %}
+    {% if g.item %}<div class="snip">{{ g.item.nsnip|safe }}{% if '<mark>' in g.item.snip %} · {{ g.item.snip|safe }}{% endif %}</div>{% endif %}
+    {% for h in g.docs %}
+      <div class="hit" hx-get="/open/{{ it.id }}?doc={{ h.ref_id }}" hx-target="#side-panel">
+        <span class="dn">{{ h.nsnip|safe }}</span>{% if '<mark>' in h.snip %} · {{ h.snip|safe }}{% endif %}</div>
+    {% endfor %}
+  {% endif %}
 {% endfor %}
 {% endfor %}
-{% if q and not groups %}<p class="muted">No hits for “{{ q }}”</p>{% endif %}
+{% if q and not groups %}<p class="muted">No hits for “{{ q }}”</p>
+{% elif not q and not counts and not groups %}<p class="muted">No items yet.</p>{% endif %}

@@ -3,19 +3,14 @@ import os
 import shutil
 from pathlib import Path
 
-# Amendment in plan.md: ~/library collides with ~/Library (case-insensitive APFS).
+# ~/library collides with ~/Library (case-insensitive APFS), hence learning-library.
 # LIBRARY_HOME overrides it — the Docker image sets /data, a bind mount of ~/learning-library.
 LIBRARY = Path(os.environ.get("LIBRARY_HOME") or Path.home() / "learning-library")
-ITEMS = LIBRARY / "items"
-DB_PATH = LIBRARY / "library.db"
+DB_PATH = LIBRARY / "library.db"       # the data — SQLite is the source of truth (ADR 0002)
+SCRATCH = LIBRARY / "scratch"          # one dir per Claude run; wiped on Accept/Revert/start
+EXPORT_DIR = LIBRARY / "export"        # default root for ./run.sh export
 
-# Registered sources (import review panel scans these on demand)
-SOURCES = [
-    {"root": Path.home() / "research", "area": "research"},
-    {"root": Path.home() / "Documents" / "painting", "area": "painting"},
-]
-BUNDLE_AREA = "teach"  # MISSION.md + lessons/ signature ⇒ teach workspace
-AREAS = ["research", "painting", "teach", "misc"]
+AREAS = ["research", "painting", "teach", "misc"]  # defaults; more can be named in-app
 
 HOST, PORT = "127.0.0.1", 8900
 

@@ -7,30 +7,35 @@
 {% if run.status == 'running' %}
   <div class="runbar"><span class="spin">⚙️</span>
     Claude working on <b>{{ run.title }}</b> — {{ run.summary }}
-    <span class="muted">({{ run.relpath }})</span></div>
+    <span class="muted">({{ run.name }})</span></div>
 
 {% elif run.status == 'diff' %}
   <div class="takeover">
-    <div class="runbar ok">✅ {{ run.summary }} — review the diff
-      {% if run.detail %}<span class="muted">({{ run.detail }})</span>{% endif %}</div>
+    <div class="runbar ok">✅ {{ run.summary }} — review the diff for <b>{{ run.name }}</b>
+      {% if run.detail and not run.stale %}<span class="muted">({{ run.detail }})</span>{% endif %}
+      {% if run.ignored %}<span class="muted">· ignored: {{ run.ignored|join(', ') }}</span>{% endif %}</div>
     <div class="diffbox">{{ diff_html|safe }}</div>
-    <div class="acceptbar">
-      working tree dirty · HEAD clean
-      <button hx-post="/claude/accept" hx-target="#stage" hx-swap="outerHTML">
-        ✓ Accept (commit)</button>
-      <button class="danger" hx-post="/claude/revert" hx-target="#stage"
-        hx-swap="outerHTML">↩ Revert (checkout)</button>
+    {% if run.stale %}
+    <div class="acceptbar stale">🚫 {{ run.detail }} — only Revert is offered
+      <button class="danger" hx-post="/claude/revert" hx-target="#stage" hx-swap="outerHTML">↩ Revert (discard)</button>
     </div>
+    {% else %}
+    <div class="acceptbar">
+      stored body unchanged · scratch copy edited
+      <button hx-post="/claude/accept" hx-target="#stage" hx-swap="outerHTML">✓ Accept (new Version)</button>
+      <button class="danger" hx-post="/claude/revert" hx-target="#stage" hx-swap="outerHTML">↩ Revert (discard)</button>
+    </div>
+    {% endif %}
   </div>
 
 {% elif run.status in ('error', 'nochange') %}
   <div class="runbar err">{{ '🚫' if run.status == 'error' else '∅' }}
     {{ run.summary }} — {{ run.detail }}
-    <button class="ghost" hx-post="/claude/dismiss" hx-target="#stage"
-      hx-swap="outerHTML">OK</button></div>
+    {% if run.ignored %}<span class="muted">· ignored: {{ run.ignored|join(', ') }}</span>{% endif %}
+    <button class="ghost" hx-post="/claude/dismiss" hx-target="#stage" hx-swap="outerHTML">OK</button></div>
 {% endif %}
 </div>
 {% if reload_doc %}<script>
-  const f = document.getElementById('reader');
-  if (f && f.src && f.src !== 'about:blank') f.src = f.src.split('#')[0];
+  (function(){ const f = document.getElementById('reader');
+    if (f && f.src && f.src !== 'about:blank') f.src = f.src.split('#')[0]; })();
 </script>{% endif %}

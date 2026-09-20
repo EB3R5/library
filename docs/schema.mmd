@@ -1,21 +1,43 @@
 erDiagram
     items {
         string id PK
-        string kind
         string title
         string area
-        string dir FK
         datetime created_at
-        datetime imported_at
         datetime updated_at
         datetime last_opened
+        string entry_doc_id
     }
-    renditions {
+    documents {
+        string id PK
         string item_id FK
-        string role
-        string relpath
-        float mtime
+        string name
+        string kind
+        string content_type
         int size
+        string body
+        string file_id FK
+        datetime created_at
+        datetime edited_at
+    }
+    blobs {
+        string id PK
+        blob data
+        string content_type
+        string name
+    }
+    document_versions {
+        string id PK
+        string doc_id FK
+        string body
+        string kind
+        string cause
+        datetime replaced_at
+    }
+    deletions {
+        string collection
+        string doc
+        datetime deleted_at
     }
     tags {
         int id PK
@@ -25,55 +47,21 @@ erDiagram
         string item_id FK
         int tag_id FK
     }
-    imports {
-        string source_path FK
-        string source_hash
-        string item_id FK
-        datetime imported_at
+    areas {
+        string name PK
     }
     search {
-        string item_id FK
-        string title
+        string ref_id
+        string item_id
+        string scope
+        string name
         string body
     }
-    item_dir {
-        string dirname PK
-        unknown meta_yaml FK
-        unknown doc_files FK
-        unknown assets
-    }
-    meta_yaml {
-        string title
-        string area
-        unknown tags
-        string kind
-        string source
-        datetime created_at
-        datetime imported_at
-    }
-    doc_file {
-        string relpath PK
-        string suffix
-        unknown frontmatter
-        float mtime
-        int size
-    }
-    source_file {
-        string path PK
-        string root
-        string area
-        string kind
-        string hash
-        string status
-        int local_edits
-    }
-    items ||--o{ renditions : "item_id"
+    items ||--o{ documents : "item_id"
+    items |o--o| documents : "entry_doc_id (pin)"
+    documents |o--o| blobs : "file_id (File Documents)"
+    documents ||--o{ document_versions : "doc_id"
     items ||--o{ item_tags : "item_id"
     tags ||--o{ item_tags : "tag_id"
-    items ||--o{ imports : "item_id"
-    items ||--o{ search : "item_id"
-    item_dir ||--o{ items : "dir"
-    item_dir ||--o{ meta_yaml : "meta_file"
-    item_dir ||--o{ doc_file : "files_on_disk"
-    doc_file ||--o{ renditions : "relpath_mtime_size"
-    source_file ||--o{ imports : "source_path"
+    items ||--o| search : "scope=item"
+    documents ||--o| search : "scope=document"
