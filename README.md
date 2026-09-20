@@ -105,3 +105,7 @@ prototype on port 8901.
 The design came out of two earlier prototypes: a Workbench shell with HTMX
 search and iframe reading, and a Claude-in-the-loop glossary editor. The
 library-side decisions are recorded in [docs/DESIGN-SKETCH.md](docs/DESIGN-SKETCH.md).
+
+## License
+
+[MIT](LICENSE)

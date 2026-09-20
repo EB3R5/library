@@ -3,6 +3,8 @@ name = "library"
 version = "0.1.0"
 description = "Workbench over a managed learning library with Claude-in-the-loop editing"
 requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
 dependencies = [
     "fastapi",
     "uvicorn",
