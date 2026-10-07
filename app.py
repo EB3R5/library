@@ -12,20 +12,50 @@ from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI, File, Form, Request, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from jinja2 import Environment, FileSystemLoader
+from starlette.middleware.sessions import SessionMiddleware
 
+import auth
 import claude_runner as cr
 import documents as docs
-from config import EXPORT_DIR, HOST, PORT
+from config import (EXPORT_DIR, HOST, PORT, SESSION_HTTPS_ONLY, SESSION_MAX_AGE,
+                    SESSION_SECRET)
 
 env = Environment(loader=FileSystemLoader(Path(__file__).parent / "templates"),
                   autoescape=True)
+
+if not SESSION_SECRET:
+    # Checked at import, not in __main__: the Docker image runs `python -m uvicorn app:app`.
+    sys.exit("SESSION_SECRET is not set. Put one in library/.env, e.g.\n"
+             "  SESSION_SECRET=$(python -c 'import secrets; print(secrets.token_hex(32))')")
 
 docs.first_run_init()
 cr.clean_scratch()
 conn = docs.connect()
 app = FastAPI()
+
+# Auth gate (ADR 0003): every request needs a session, except exempt paths or a valid
+# API_TOKEN bearer header. Browser misses redirect to /login; /api/* get a 401 JSON.
+# Tests flip app.state.auth_disabled to skip the gate. Added BEFORE SessionMiddleware so
+# Session ends up the outer middleware and request.session is populated first.
+app.state.auth_disabled = False
+
+
+@app.middleware("http")
+async def auth_gate(request: Request, call_next):
+    path = request.url.path
+    session_user = request.session.get(auth.SESSION_USER_KEY)
+    bearer = auth.has_valid_api_token(request.headers.get("authorization"))
+    if app.state.auth_disabled or auth.is_exempt(path) or session_user or bearer:
+        return await call_next(request)
+    if path.startswith("/api/"):
+        return JSONResponse({"ok": False, "error": "Not authenticated"}, 401)
+    return RedirectResponse("/login", status_code=303)
+
+
+app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET,
+                   max_age=SESSION_MAX_AGE, https_only=SESSION_HTTPS_ONLY, same_site="lax")
 
 OPEN_ID: str | None = None  # workbench state: which item is open
 
@@ -129,6 +159,39 @@ def guard(fn):
         return JSONResponse(fn())
     except docs.DomainError as e:
         return JSONResponse({"ok": False, "error": str(e)}, e.status)
+
+
+# ---------------------------------------------------------------- login (ADR 0003)
+_BAD = "Invalid credentials."
+
+
+@app.get("/login", response_class=HTMLResponse)
+def login_page(request: Request):
+    if request.session.get(auth.SESSION_USER_KEY):
+        return RedirectResponse("/", status_code=303)
+    return env.get_template("login.html").render(error=None)
+
+
+@app.post("/login", response_class=HTMLResponse)
+def login(request: Request, username: str = Form(...), password: str = Form(...),
+          totp: str = Form(...)):
+    """Verify password then TOTP against the one users row. One generic failure message:
+    no hint about which factor failed, no user enumeration."""
+    user = docs.get_user(conn)
+    ok = (user is not None
+          and username.strip() == user["username"]
+          and auth.verify_password(password, user["pw_hash"])
+          and auth.verify_totp(user["totp_secret"], totp))
+    if not ok:
+        return HTMLResponse(env.get_template("login.html").render(error=_BAD), 401)
+    request.session[auth.SESSION_USER_KEY] = user["username"]
+    return RedirectResponse("/", status_code=303)
+
+
+@app.post("/logout")
+def logout(request: Request):
+    request.session.clear()
+    return RedirectResponse("/login", status_code=303)
 
 
 # ---------------------------------------------------------------- pages
@@ -405,7 +468,43 @@ def claude_dismiss():
 
 
 # ---------------------------------------------------------------- main
+def create_user() -> int:
+    """`./run.sh create-user`: prompt for the single login, generate a TOTP secret, write
+    the users row, print the authenticator URI. Run with the server stopped, or inside the
+    container (`docker exec -it library /app/.venv/bin/python app.py create-user`)."""
+    import getpass
+
+    import pyotp
+
+    existing = docs.get_user(conn)
+    if existing:
+        print(f"A user already exists: {existing['username']!r}. Continuing will replace it.")
+        if input("Replace? [y/N] ").strip().lower() != "y":
+            print("Aborted.")
+            return 1
+    username = input("Username: ").strip()
+    if not username:
+        print("Username required.")
+        return 1
+    pw1 = getpass.getpass("Password: ")
+    pw2 = getpass.getpass("Confirm password: ")
+    if not pw1 or pw1 != pw2:
+        print("Passwords empty or do not match.")
+        return 1
+    secret = pyotp.random_base32()
+    docs.upsert_user(conn, username, auth.hash_password(pw1), secret)
+    uri = pyotp.TOTP(secret).provisioning_uri(name=username, issuer_name="library")
+    print("\nUser saved. Add this to your authenticator app:")
+    print(f"  TOTP secret: {secret}")
+    print(f"  otpauth URI: {uri}")
+    print("\n(Make a QR from the URI if your app needs one, e.g. "
+          "`qrencode -t ANSIUTF8 '<uri>'`.)")
+    return 0
+
+
 if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] == "create-user":
+        sys.exit(create_user())
     if len(sys.argv) > 1 and sys.argv[1] == "export":
         import export
         root = Path(sys.argv[2]).expanduser() if len(sys.argv) > 2 else EXPORT_DIR
@@ -413,5 +512,7 @@ if __name__ == "__main__":
         print(f"exported {r['items']} items / {r['documents']} documents → {r['root']}"
               f" (pruned {r['pruned']} stale file(s); library.db copied)")
         sys.exit(0)
+    if not docs.get_user(conn):
+        print("No login yet: run `./run.sh create-user` first.", file=sys.stderr)
     print(f"library → http://{HOST}:{PORT}")
     uvicorn.run(app, host=HOST, port=PORT)

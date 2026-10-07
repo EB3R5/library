@@ -28,6 +28,8 @@ the result shows as a diff, and you Accept or Revert.
 ```bash
 git clone https://github.com/EB3R5/library.git
 cd library
+echo "SESSION_SECRET=$(python3 -c 'import secrets; print(secrets.token_hex(32))')" > .env
+./run.sh create-user  # username, password, and a TOTP secret for your authenticator app
 ./run.sh              # http://127.0.0.1:8900
 ./run.sh export       # backup: plain-file tree + DB copy in ~/learning-library/export
 ```
@@ -35,6 +37,16 @@ cd library
 The first run creates `~/learning-library/` and the database schema. Set
 `LIBRARY_HOME` to put the data somewhere else. A v1 `library.db` found there
 is moved aside as `library.v1.db`, never migrated.
+
+**Login.** The Workbench is behind a single-user login: username, password
+and a six-digit authenticator code, once per session (seven days by
+default). `./run.sh create-user` writes the one credential into `library.db`
+and prints the TOTP secret and an `otpauth://` URI to add to your
+authenticator app; run it again to replace the login. `.env` holds
+`SESSION_SECRET`, which signs the session cookie; the server refuses to
+start without it, and the file is ignored by git and by the Docker build.
+`/healthz` stays open for probes. There is no rate limiting or password
+reset: it is one person's library behind one login.
 
 ## Using it
 
@@ -109,8 +121,9 @@ every target probes.
 ## Layout
 
 ```
-app.py               FastAPI routes, the JSON API and the uvicorn entry point
-documents.py         the store: schema, items, documents, blobs, versions, search
+app.py               FastAPI routes, the JSON API, the auth gate and the uvicorn entry point
+auth.py              the single-user login: password hash, TOTP, exempt paths, API token
+documents.py         the store: schema, items, documents, blobs, versions, search, the login row
 claude_runner.py     the claude -p runner over a scratch directory, one global slot
 export.py            the backup command
 config.py            paths, port, Claude settings

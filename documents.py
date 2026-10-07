@@ -55,6 +55,8 @@ CREATE TABLE IF NOT EXISTS deletions(collection TEXT, doc TEXT, deleted_at TEXT)
 CREATE TABLE IF NOT EXISTS tags(id INTEGER PRIMARY KEY, name TEXT UNIQUE);
 CREATE TABLE IF NOT EXISTS item_tags(item_id TEXT, tag_id INTEGER, UNIQUE(item_id, tag_id));
 CREATE TABLE IF NOT EXISTS areas(name TEXT PRIMARY KEY);  -- user-named, may be empty
+CREATE TABLE IF NOT EXISTS users(                          -- the one login (ADR 0003)
+  username TEXT PRIMARY KEY, pw_hash TEXT NOT NULL, totp_secret TEXT NOT NULL);
 CREATE VIRTUAL TABLE IF NOT EXISTS search USING fts5(
   ref_id UNINDEXED, item_id UNINDEXED, scope UNINDEXED, name, body);
 """
@@ -105,6 +107,24 @@ def first_run_init() -> None:
     if aside:
         print(f"v1 index cache moved aside → {aside} (v2 starts empty; items/ is untouched)")
     connect().close()
+
+
+# ---------------------------------------------------------------- users (ADR 0003)
+def get_user(conn) -> dict | None:
+    """The single credential row, or None before `create-user` has run."""
+    row = conn.execute("SELECT username, pw_hash, totp_secret FROM users LIMIT 1").fetchone()
+    return dict(row) if row else None
+
+
+def upsert_user(conn, username: str, pw_hash: str, totp_secret: str) -> None:
+    """Single-user: replace whatever row exists with this one."""
+    username = (username or "").strip()
+    if not username:
+        raise DomainError("username is required")
+    with conn:
+        conn.execute("DELETE FROM users")
+        conn.execute("INSERT INTO users(username, pw_hash, totp_secret) VALUES (?,?,?)",
+                     (username, pw_hash, totp_secret))
 
 
 # ---------------------------------------------------------------- classify

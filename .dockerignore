@@ -10,3 +10,5 @@ tests/
 packaging/desktop/
 CONTEXT.md
 plan.md
+.env
+*.env

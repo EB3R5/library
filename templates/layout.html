@@ -141,7 +141,9 @@
     <div class="zone" data-mode="each">📄 One new item per file<small>each on its own, in <span class="zone-area"></span></small></div>
   </div>
   <div class="panel" id="side-panel">
-    <div class="inner muted">library · {{ item_count }} items · pick one, or make one below the tree.</div>
+    <div class="inner muted">library · {{ item_count }} items · pick one, or make one below the tree.
+      <form method="post" action="/logout" style="margin-top:10px"><button class="ghost sm" type="submit">Sign out</button></form>
+    </div>
   </div>
 <script>
 window.OPEN_ITEM = null;
