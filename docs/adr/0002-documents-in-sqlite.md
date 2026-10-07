@@ -12,9 +12,9 @@ File Documents keep bytes in a `blobs` table behind a three-function seam, a
 `document_versions` table replaces git as the undo store, and an Export
 command replaces the folder as the backup. Decided 2026-09-17 while charting
 the [v2 map](https://github.com/EB3R5/library/issues/16), lifting the design
-of the tasks-webapp Documents feature
-([docs/research/tasks-webapp-documents-feature.md](../research/tasks-webapp-documents-feature.md))
-after it was proven in the `prototype_documents/` prototype.
+of the tasks-webapp Documents feature (a private app; the write-up that was in
+`docs/research/` has been removed from this public repo) after it was proven in
+the `prototype_documents/` prototype.
 
 ## Considered Options
 
