@@ -9,8 +9,9 @@ import hmac
 
 import bcrypt
 import pyotp
+from fastapi import Request
 
-from config import API_TOKEN
+from config import API_TOKEN  # noqa: F401 — module-level so tests can monkeypatch auth.API_TOKEN
 
 SESSION_USER_KEY = "user"
 
@@ -57,3 +58,15 @@ def has_valid_api_token(auth_header: str | None) -> bool:
     if scheme.lower() != "bearer":
         return False
     return hmac.compare_digest(token.strip(), API_TOKEN)
+
+
+class TokenRequired(Exception):
+    """Raised by require_token; app.py turns it into a 401 {ok: false, error} JSON."""
+
+
+def require_token(request: Request) -> None:
+    """FastAPI dependency for the agent API (ADR 0005): the bearer token, not a session."""
+    if not API_TOKEN:
+        raise TokenRequired("agent API disabled: set API_TOKEN")
+    if not has_valid_api_token(request.headers.get("authorization")):
+        raise TokenRequired("Not authenticated")
