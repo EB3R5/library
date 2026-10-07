@@ -1,8 +1,16 @@
 ---
-status: accepted
+status: accepted, narrowed 2026-10-07
 ---
 
 # Research crosses from Tasks by a skill, not by app-to-app coupling
+
+> **Narrowed the same day (tasks-webapp ADR-0019):** Option B below is now also in place —
+> the Tasks app has a 📚 Shelve button that writes over this agent API (ADR 0005) with the
+> same mapping, the same `source: tasks:<id>`, and the same `library:` marker, so the user can
+> shelve without an agent session. The library side is unchanged: it still knows nothing about
+> maps or tickets, and this skill still works. What this ADR keeps is everything else: no pull
+> from the library (C), nothing automatic on Done (D), and the mapping in
+> `agent/skills/library-shelve/REFERENCE.md` stays the spec both implementations follow.
 
 Research is produced in the Tasks app: a map (a top-level task) with Done
 research tickets, each carrying a `Research.md` and an `Outcome.md`. It
