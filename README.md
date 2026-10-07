@@ -150,6 +150,13 @@ uv sync --extra agent
 claude mcp add --scope user library -- "$PWD/.venv/bin/python" "$PWD/agent/mcp_server.py"
 ```
 
+**Shelving research from Tasks.** `agent/skills/library-shelve/` is a Claude
+Code skill (`/library-shelve <map>`) that moves one Tasks map's research here
+as one item: a document per Done research ticket, the brief pinned as the
+entry document, every row tagged with its `tasks:` source, and the map
+marked shelved in Tasks. It asks before writing and runs one map at a time.
+Symlink it once: `ln -s "$PWD/agent/skills/library-shelve" ~/.claude/skills/library-shelve`.
+
 ## Run and package
 
 `./run.sh` is the dev server. Everything else that launches the app lives in
@@ -165,6 +172,7 @@ every target probes.
 app.py               FastAPI routes, the JSON API, the auth gate and the uvicorn entry point
 agent_api.py         the token-gated JSON routes under /api/agent
 agent/mcp_server.py  the MCP server: those routes as tools, over stdio
+agent/skills/        Claude Code skills: library-shelve (research from Tasks → one item)
 auth.py              the single-user login: password hash, TOTP, exempt paths, API token
 documents.py         the store: schema, items, documents, blobs, versions, search, the login row
 claude_runner.py     the claude -p runner over a scratch directory, one global slot
