@@ -28,7 +28,8 @@ CREATE TABLE IF NOT EXISTS items(
   title        TEXT NOT NULL,
   area         TEXT NOT NULL,
   created_at   TEXT, updated_at TEXT, last_opened TEXT,
-  entry_doc_id TEXT);                      -- nullable pin; fallback = first created
+  entry_doc_id TEXT,                       -- nullable pin; fallback = first created
+  source       TEXT);                      -- provenance, e.g. tasks:<task id> (ADR 0004)
 CREATE TABLE IF NOT EXISTS documents(
   id           TEXT PRIMARY KEY,
   item_id      TEXT NOT NULL REFERENCES items(id),
@@ -39,6 +40,7 @@ CREATE TABLE IF NOT EXISTS documents(
   body         TEXT,                       -- TEXT ONLY
   file_id      TEXT,                       -- FILE ONLY -> blobs.id
   created_at   TEXT, edited_at TEXT,
+  source       TEXT,                       -- provenance, e.g. tasks:<document id>
   UNIQUE(item_id, name));
 CREATE INDEX IF NOT EXISTS documents_item ON documents(item_id);
 CREATE TABLE IF NOT EXISTS blobs(
@@ -82,7 +84,25 @@ def connect(path=None) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys=ON")   # declared; cascades stay explicit in code
     conn.executescript(SCHEMA)
+    _migrate(conn)
     return conn
+
+
+# Columns added after v2 shipped. CREATE TABLE IF NOT EXISTS leaves an existing table
+# alone, so each is probed and ADDed once; the probe is the same one _retire_v1_db uses.
+_ADDED_COLUMNS = (("items", "source", "TEXT"), ("documents", "source", "TEXT"))
+
+
+def _migrate(conn) -> list[str]:
+    done = []
+    for table, col, decl in _ADDED_COLUMNS:
+        cols = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
+        if col not in cols:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
+            done.append(f"{table}.{col}")
+    if done:
+        conn.commit()
+    return done
 
 
 def _retire_v1_db() -> str | None:
@@ -316,17 +336,21 @@ def _require_item(conn, item_id: str) -> dict:
     return it
 
 
-def list_items(conn) -> list[dict]:
+def list_items(conn, source: str | None = None) -> list[dict]:
+    """Every Item by title; `source` narrows to the Items with exactly that provenance."""
+    if source:
+        return [dict(r) for r in conn.execute(
+            "SELECT * FROM items WHERE source=? ORDER BY lower(title)", (source,))]
     return [dict(r) for r in conn.execute("SELECT * FROM items ORDER BY lower(title)")]
 
 
-def create_item(conn, title: str, area: str) -> str:
+def create_item(conn, title: str, area: str, source: str | None = None) -> str:
     title = " ".join(str(title or "").split()).strip()
     if not title:
         raise DomainError("title cannot be empty")
     iid, ts = new_id(), now()
-    conn.execute("INSERT INTO items(id,title,area,created_at,updated_at) VALUES(?,?,?,?,?)",
-                 (iid, title, area or "misc", ts, ts))
+    conn.execute("INSERT INTO items(id,title,area,created_at,updated_at,source) VALUES(?,?,?,?,?,?)",
+                 (iid, title, area or "misc", ts, ts, (source or "").strip() or None))
     set_item_fts(conn, iid)
     conn.commit()
     return iid
@@ -416,8 +440,8 @@ def _unique_name(conn, item_id: str, name: str) -> str:
 def _insert(conn, row: dict) -> dict:
     conn.execute(
         "INSERT INTO documents(id,item_id,name,kind,content_type,size,body,file_id,"
-        "created_at,edited_at) VALUES(:id,:item_id,:name,:kind,:content_type,:size,"
-        ":body,:file_id,:created_at,:edited_at)", row)
+        "created_at,edited_at,source) VALUES(:id,:item_id,:name,:kind,:content_type,:size,"
+        ":body,:file_id,:created_at,:edited_at,:source)", {"source": None, **row})
     set_doc_fts(conn, row)
     touch_item(conn, row["item_id"])
     conn.commit()
@@ -425,7 +449,7 @@ def _insert(conn, row: dict) -> dict:
 
 
 def add_upload(conn, item_id: str, filename: str, content_type: str | None,
-               data: bytes) -> dict:
+               data: bytes, source: str | None = None) -> dict:
     _require_item(conn, item_id)
     if not data:
         raise DomainError("empty file")
@@ -433,7 +457,8 @@ def add_upload(conn, item_id: str, filename: str, content_type: str | None,
     kind = classify(name, content_type)
     ts = now()
     row = dict(id=new_id(), item_id=item_id, name=name, kind=kind, size=len(data),
-               body=None, file_id=None, created_at=ts, edited_at=ts)
+               body=None, file_id=None, created_at=ts, edited_at=ts,
+               source=(source or "").strip() or None)
     if is_text_kind(kind):
         if len(data) > TEXT_CAP:
             raise DomainError(f"text over {TEXT_CAP // 2**20} MB cap")
@@ -451,7 +476,7 @@ def add_upload(conn, item_id: str, filename: str, content_type: str | None,
     return _insert(conn, row)
 
 
-def add_note(conn, item_id: str, name: str | None) -> dict:
+def add_note(conn, item_id: str, name: str | None, source: str | None = None) -> dict:
     """A Note: a Text Document of kind md created empty from the panel."""
     _require_item(conn, item_id)
     name = (name or "").strip() or "Note"
@@ -461,13 +486,14 @@ def add_note(conn, item_id: str, name: str | None) -> dict:
     ts = now()
     return _insert(conn, dict(id=new_id(), item_id=item_id, name=name, kind="md",
                               content_type="text/markdown", size=0, body="",
-                              file_id=None, created_at=ts, edited_at=ts))
+                              file_id=None, created_at=ts, edited_at=ts,
+                              source=(source or "").strip() or None))
 
 
 def list_for_item(conn, item_id: str) -> list[dict]:
     """Bodies are projected out — the panel stays cheap however many notes exist."""
     rows = conn.execute(
-        "SELECT id,item_id,name,kind,content_type,size,file_id,created_at,edited_at "
+        "SELECT id,item_id,name,kind,content_type,size,file_id,created_at,edited_at,source "
         "FROM documents WHERE item_id=? ORDER BY created_at, rowid", (item_id,)).fetchall()
     return [serialize(dict(r)) for r in rows]
 
@@ -621,7 +647,7 @@ def serialize(d: dict) -> dict:
     ct = d.get("content_type") or ""
     return dict(id=d["id"], item_id=d["item_id"], name=d["name"], kind=d["kind"],
                 content_type=ct, size=d.get("size") or 0, edited_at=d.get("edited_at"),
-                created_at=d.get("created_at"),
+                created_at=d.get("created_at"), source=d.get("source"),
                 is_image=ct.startswith("image/"), is_pdf=ct == "application/pdf",
                 editable=is_text_kind(d["kind"]))
 

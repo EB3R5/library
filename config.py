@@ -20,6 +20,9 @@ AREAS = ["research", "painting", "teach", "misc"]  # defaults; more can be named
 
 HOST, PORT = "127.0.0.1", 8900
 
+# Where a `tasks:<id>` Source links to (ADR 0004): the Tasks app's base URL.
+TASKS_URL = os.environ.get("TASKS_URL", "http://127.0.0.1:8011").rstrip("/")
+
 # Session login (auth.py, ADR 0003). SESSION_SECRET signs the cookie and is required to
 # serve — generate one with: python -c "import secrets; print(secrets.token_hex(32))".
 # SESSION_MAX_AGE is the cookie lifetime in seconds (default 7 days). SESSION_HTTPS_ONLY

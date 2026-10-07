@@ -20,7 +20,7 @@ import auth
 import claude_runner as cr
 import documents as docs
 from config import (EXPORT_DIR, HOST, PORT, SESSION_HTTPS_ONLY, SESSION_MAX_AGE,
-                    SESSION_SECRET)
+                    SESSION_SECRET, TASKS_URL)
 
 env = Environment(loader=FileSystemLoader(Path(__file__).parent / "templates"),
                   autoescape=True)
@@ -67,6 +67,17 @@ def fmt_size(n: int) -> str:
 
 
 env.filters["size"] = fmt_size
+
+
+def source_href(source: str | None) -> str:
+    """A Source like `tasks:<id>` becomes a link into the Tasks app; anything else, no link."""
+    scheme, _, ref = (source or "").partition(":")
+    if scheme == "tasks" and ref:
+        return f"{TASKS_URL}/tasks/{ref}"
+    return ""
+
+
+env.filters["source_href"] = source_href
 
 
 def resolve_area(area: str, new_area: str = "") -> str:

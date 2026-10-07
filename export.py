@@ -44,7 +44,8 @@ def run(conn, root: Path) -> dict:
         meta = dict(id=it["id"], title=it["title"], area=it["area"],
                     tags=docs.tags_of(conn, it["id"]),
                     entry_document=entry["name"] if entry else None,
-                    created=it["created_at"], updated=it["updated_at"])
+                    created=it["created_at"], updated=it["updated_at"],
+                    source=it.get("source"))
         mp = d / "item.json"
         mp.write_text(json.dumps(meta, indent=2, ensure_ascii=False) + "\n")
         wanted.add(mp.resolve())

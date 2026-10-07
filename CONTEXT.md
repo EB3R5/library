@@ -66,6 +66,10 @@ _Avoid_: working tree, checkout, item dir
 A user-invoked dump of every Item's Documents to a plain folder tree plus a copy of the database. The backup mechanism.
 _Avoid_: rebuild, sync, mirror
 
+**Source**:
+Where an Item or a Document came from, as `<scheme>:<id>` — the first scheme is `tasks:` for a task or document in the Tasks app. Machine-written, never typed; shown as a link in the Info tab. Says where a thing came from, not that it is still in sync.
+_Avoid_: origin, provenance (in code), link, sync
+
 **Login**:
 The one username + password + authenticator code that opens the Workbench. A single credential row, written by `create-user`, replaced never merged.
 _Avoid_: account, user management, sign-up

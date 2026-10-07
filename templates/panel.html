@@ -20,7 +20,7 @@
   {% for d in docs %}
     <li class="doc-line" data-id="{{ d.id }}">
       <span class="kind kind-{{ d.kind }}">{{ d.kind }}</span>
-      <span class="name" onclick="loadDoc('/documents/{{ d.id }}')">
+      <span class="name" onclick="loadDoc('/documents/{{ d.id }}')"{% if d.source %} title="from {{ d.source }}"{% endif %}>
         {{ '📌 ' if entry and d.id == entry.id }}{{ d.name }}</span>
       <span class="sz">{{ d.size|size }}</span>
       <span class="hover">
@@ -58,6 +58,7 @@
     <summary class="muted">{{ it.area }} · {{ tags|join(', ') if tags else 'no tags' }} · updated {{ (it.updated_at or '—')[:10] }}</summary>
     <dl>
       <dt>Created · Updated</dt><dd>{{ (it.created_at or '—')[:16] }} · {{ (it.updated_at or '—')[:16] }}</dd>
+      {% if it.source %}<dt>Source</dt><dd>{% set href = it.source|source_href %}{% if href %}<a href="{{ href }}" target="_blank" rel="noopener">{{ it.source }}</a>{% else %}{{ it.source }}{% endif %}</dd>{% endif %}
     </dl>
     <form hx-post="/items/{{ it.id }}/area" hx-target="#side-panel" style="margin-top:8px">
       <dt style="margin:0 0 3px">Area</dt>
