@@ -24,6 +24,11 @@ dependencies = [
 # Desktop window (packaging/desktop/launcher.py). pywebview pulls pyobjc on macOS; on Linux it
 # uses the distro gi/WebKit2, exposed to the venv by packaging/desktop/linux/install.sh.
 desktop = ["pywebview>=6.2"]
+# The MCP server (agent/mcp_server.py) — a client of the running app's Agent API (ADR 0006).
+agent = ["mcp>=2.3", "httpx>=0.27"]
 
 [dependency-groups]
-dev = ["pytest", "httpx"]
+dev = ["pytest", "pytest-asyncio", "httpx"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
