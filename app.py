@@ -16,6 +16,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from jinja2 import Environment, FileSystemLoader
 from starlette.middleware.sessions import SessionMiddleware
 
+import agent_api
 import auth
 import claude_runner as cr
 import documents as docs
@@ -56,6 +57,11 @@ async def auth_gate(request: Request, call_next):
 
 app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET,
                    max_age=SESSION_MAX_AGE, https_only=SESSION_HTTPS_ONLY, same_site="lax")
+
+agent_api.conn = conn
+app.include_router(agent_api.router)
+app.add_exception_handler(
+    auth.TokenRequired, lambda request, exc: JSONResponse({"ok": False, "error": str(exc)}, 401))
 
 OPEN_ID: str | None = None  # workbench state: which item is open
 

@@ -109,6 +109,35 @@ with SQLite's online backup. Running it again overwrites in place and prunes,
 so a scheduled export is idempotent. Restore is stopping the app and copying
 that database back.
 
+## Agents
+
+`/api/agent/*` is a small JSON API for scripts and the MCP server: list,
+search and read Items and Text Documents; create an Item with a title, area,
+tags and a `source`; add a Text Document with a body; set tags; pin the entry
+document. Every call needs `Authorization: Bearer <API_TOKEN>`, with the token
+set in `.env` next to `SESSION_SECRET` (generate one the same way); a browser
+session is not enough, and the API is off while the token is unset. The
+Workbench's own routes are unchanged. Text documents only.
+
+```bash
+curl -H "Authorization: Bearer $API_TOKEN" http://127.0.0.1:8900/api/agent/areas
+curl -H "Authorization: Bearer $API_TOKEN" -H 'content-type: application/json' \
+  -d '{"title":"Dancing: the landscape","area":"research","tags":["Health"],"source":"tasks:man_abc"}' \
+  http://127.0.0.1:8900/api/agent/items
+```
+
+| Method | Path | Body / query |
+|---|---|---|
+| GET | `/api/agent/areas` | |
+| GET | `/api/agent/items` | `?area=&tag=&q=&source=` |
+| GET | `/api/agent/items/{id}` | |
+| GET | `/api/agent/search` | `?q=&limit=` |
+| GET | `/api/agent/documents/{id}` | text documents, with body |
+| POST | `/api/agent/items` | `{title, area?, tags?, source?}` |
+| POST | `/api/agent/items/{id}/documents` | `{name, body, source?}` |
+| POST | `/api/agent/items/{id}/tags` | `{tags}` |
+| POST | `/api/agent/items/{id}/pin` | `{doc_id}` |
+
 ## Run and package
 
 `./run.sh` is the dev server. Everything else that launches the app lives in
@@ -122,6 +151,7 @@ every target probes.
 
 ```
 app.py               FastAPI routes, the JSON API, the auth gate and the uvicorn entry point
+agent_api.py         the token-gated JSON routes under /api/agent
 auth.py              the single-user login: password hash, TOTP, exempt paths, API token
 documents.py         the store: schema, items, documents, blobs, versions, search, the login row
 claude_runner.py     the claude -p runner over a scratch directory, one global slot

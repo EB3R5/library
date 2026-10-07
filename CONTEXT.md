@@ -70,6 +70,14 @@ _Avoid_: rebuild, sync, mirror
 Where an Item or a Document came from, as `<scheme>:<id>` — the first scheme is `tasks:` for a task or document in the Tasks app. Machine-written, never typed; shown as a link in the Info tab. Says where a thing came from, not that it is still in sync.
 _Avoid_: origin, provenance (in code), link, sync
 
+**Agent API**:
+The JSON routes under `/api/agent` an agent or script uses to list, search, read, create and tag Items and add Text Documents, admitted by the API token alone, never by a Session. Each route is one call into the store. See ADR 0005.
+_Avoid_: REST API, integration, webhook, sync
+
+**API token**:
+The static secret (`API_TOKEN` in `.env`) a bearer header carries to use the Agent API or pass the gate without a Login. Separate from the session secret; empty means the Agent API is off.
+_Avoid_: API key, access token, JWT
+
 **Login**:
 The one username + password + authenticator code that opens the Workbench. A single credential row, written by `create-user`, replaced never merged.
 _Avoid_: account, user management, sign-up
