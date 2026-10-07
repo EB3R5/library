@@ -65,3 +65,11 @@ _Avoid_: working tree, checkout, item dir
 **Export**:
 A user-invoked dump of every Item's Documents to a plain folder tree plus a copy of the database. The backup mechanism.
 _Avoid_: rebuild, sync, mirror
+
+**Login**:
+The one username + password + authenticator code that opens the Workbench. A single credential row, written by `create-user`, replaced never merged.
+_Avoid_: account, user management, sign-up
+
+**Session**:
+The signed cookie a successful Login leaves in the browser, good for seven days or until Sign out. The gate admits a request with a Session, an exempt path, or a valid API token; everything else is sent to the login page (pages) or refused with 401 (API).
+_Avoid_: auth token, JWT, login state

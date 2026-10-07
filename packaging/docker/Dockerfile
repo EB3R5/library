@@ -9,7 +9,7 @@ WORKDIR /app
 ENV UV_PYTHON_DOWNLOADS=never UV_LINK_MODE=copy UV_COMPILE_BYTECODE=1
 COPY pyproject.toml uv.lock ./
 RUN uv sync --locked --no-dev --no-cache
-COPY app.py config.py documents.py export.py claude_runner.py ./
+COPY app.py auth.py config.py documents.py export.py claude_runner.py ./
 COPY templates ./templates
 # HOME on the data mount: the container may run as the host uid with no passwd entry.
 ENV HOME=/data LIBRARY_HOME=/data

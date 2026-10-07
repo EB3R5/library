@@ -38,12 +38,18 @@ because the container may run as the host uid with no passwd entry.
 
 ```bash
 docker build -f packaging/docker/Dockerfile -t library .
-docker run --rm -p 127.0.0.1:8900:8000 -v ~/learning-library:/data library
+docker run --rm -p 127.0.0.1:8900:8000 -v ~/learning-library:/data --env-file .env library
 ```
 
-The `homelab` repo's `compose.yml` builds this Dockerfile, mounts `~/learning-library:/data`,
-and publishes `127.0.0.1:8900:8000`; `compose.linux.yml` runs it as uid 1000 so the files stay
-yours.
+The container needs `SESSION_SECRET` (ADR 0003) and refuses to start without it; `.env` is
+excluded from the build context, so it is passed at run time. The `homelab` repo's
+`compose.yml` builds this Dockerfile, mounts `~/learning-library:/data`, publishes
+`127.0.0.1:8900:8000` and reads `../library/.env` as `env_file`; `compose.linux.yml` runs it as
+uid 1000 so the files stay yours. Create the login once, inside the running container:
+
+```bash
+docker exec -it library /app/.venv/bin/python app.py create-user
+```
 
 ## desktop/launcher.py
 

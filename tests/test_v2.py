@@ -9,6 +9,7 @@ import pytest
 
 TMP = Path(tempfile.mkdtemp(prefix="library-test-"))
 os.environ["LIBRARY_HOME"] = str(TMP)
+os.environ.setdefault("SESSION_SECRET", "test-only-secret")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import app as appmod  # noqa: E402  (imports config with LIBRARY_HOME set)
@@ -17,6 +18,7 @@ import documents as docs  # noqa: E402
 import export  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
+appmod.app.state.auth_disabled = True   # the gate itself is covered by tests/test_auth.py
 client = TestClient(appmod.app)
 conn = appmod.conn
 
