@@ -13,6 +13,8 @@ and the brief as the entry document, and a **shelved** marker back on the map.
 Two apps, two MCP servers, no coupling between them: Tasks is read, the Library is written,
 and the only link is the `source` each item and document carries (`tasks:<id>`).
 
+The Tasks app has the same operation as a 📚 Shelve button (its ADR-0019): preview, confirm, write, mark. Use this skill when the user asks an agent to do it; both read the same `library:` marker and `source`, so a map shelved one way is shelved for the other.
+
 ## Tools
 
 `mcp__tasks__*` (list_tasks, get_task, read_document, add_action, tick_action) and
