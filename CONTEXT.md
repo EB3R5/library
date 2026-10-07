@@ -78,6 +78,10 @@ _Avoid_: REST API, integration, webhook, sync
 The static secret (`API_TOKEN` in `.env`) a bearer header carries to use the Agent API or pass the gate without a Login. Separate from the session secret; empty means the Agent API is off.
 _Avoid_: API key, access token, JWT
 
+**Shelving**:
+Bringing one Tasks map's research into the library as one Item — a document per research ticket, the brief pinned, every row with a `tasks:` Source — by the `library-shelve` skill, on the user's say-so, after review. The map then carries a `library:` marker in Tasks. See ADR 0007.
+_Avoid_: sync, import, export, archive, publish
+
 **MCP server**:
 `agent/mcp_server.py`: the Agent API as tools an agent calls over stdio, each one an HTTP call with the API token. Owns no data, opens no database. See ADR 0006.
 _Avoid_: plugin, integration, connector
