@@ -78,6 +78,10 @@ _Avoid_: REST API, integration, webhook, sync
 The static secret (`API_TOKEN` in `.env`) a bearer header carries to use the Agent API or pass the gate without a Login. Separate from the session secret; empty means the Agent API is off.
 _Avoid_: API key, access token, JWT
 
+**MCP server**:
+`agent/mcp_server.py`: the Agent API as tools an agent calls over stdio, each one an HTTP call with the API token. Owns no data, opens no database. See ADR 0006.
+_Avoid_: plugin, integration, connector
+
 **Login**:
 The one username + password + authenticator code that opens the Workbench. A single credential row, written by `create-user`, replaced never merged.
 _Avoid_: account, user management, sign-up

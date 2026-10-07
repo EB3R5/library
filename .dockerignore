@@ -12,3 +12,4 @@ CONTEXT.md
 plan.md
 .env
 *.env
+agent/

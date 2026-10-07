@@ -138,6 +138,18 @@ curl -H "Authorization: Bearer $API_TOKEN" -H 'content-type: application/json' \
 | POST | `/api/agent/items/{id}/tags` | `{tags}` |
 | POST | `/api/agent/items/{id}/pin` | `{doc_id}` |
 
+**MCP server.** `agent/mcp_server.py` exposes the same routes as MCP tools
+over stdio (`list_areas`, `list_items`, `get_item`, `search`,
+`read_document`, `create_item`, `add_document`, `set_tags`, `pin_entry`).
+It is a client of the running app, nothing more: it reads `API_TOKEN` from
+`.env` (or `LIBRARY_API_TOKEN`) and talks to `LIBRARY_URL` (default
+`http://127.0.0.1:8900`). Install the extra and register it once:
+
+```bash
+uv sync --extra agent
+claude mcp add --scope user library -- "$PWD/.venv/bin/python" "$PWD/agent/mcp_server.py"
+```
+
 ## Run and package
 
 `./run.sh` is the dev server. Everything else that launches the app lives in
@@ -152,6 +164,7 @@ every target probes.
 ```
 app.py               FastAPI routes, the JSON API, the auth gate and the uvicorn entry point
 agent_api.py         the token-gated JSON routes under /api/agent
+agent/mcp_server.py  the MCP server: those routes as tools, over stdio
 auth.py              the single-user login: password hash, TOTP, exempt paths, API token
 documents.py         the store: schema, items, documents, blobs, versions, search, the login row
 claude_runner.py     the claude -p runner over a scratch directory, one global slot
