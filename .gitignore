@@ -6,3 +6,7 @@ __pycache__/
 # per-machine: packaging/desktop/linux/install.sh pins uv to the distro Python so the system gi imports
 .python-version
 .pytest_cache/
+
+# secrets: SESSION_SECRET (and later API_TOKEN) live here, never in the repo
+.env
+*.env
